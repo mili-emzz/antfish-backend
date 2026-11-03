@@ -1,3 +1,4 @@
 /scripts
 /docs
 __pycache__
+.env
