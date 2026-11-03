@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.schemas.auth import UserRegisterRequest, UserRegisterResponse
+from app.api.schemas.auth import UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest
 from app.core.exceptions import DuplicateEmailError
 from app.services.auth_service import AuthService
 
@@ -60,3 +60,23 @@ async def register(
             detail=exc.message if hasattr(exc, "message") else str(exc),
         ) from exc
 
+
+@router.post(
+    "/verify-email", 
+    status_code=status.HTTP_200_OK, 
+    summary="Verifica el correo del usuario (RF-06.2)"
+)
+async def verify_email(
+    payload: VerifyEmailRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """Endpoint POST /api/v1/auth/verify-email para verificar el código de 6 dígitos."""
+    try:
+        result = await auth_service.verify_email(email=payload.email, codigo=payload.codigo)
+        return result
+    except ValueError as exc:
+        # Devuelve 400 uniformemente si algo falla, previniendo enumeración
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )

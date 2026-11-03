@@ -53,3 +53,16 @@ class UserRepository:
         )
         return await self.find_by_id(oid)
 
+    async def get_by_email(self, email: str) -> dict | None:
+        return await self.collection.find_one({"email": email})
+
+    async def mark_as_verified(self, user_id: str) -> bool:
+        result = await self.collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "estado_cuenta": "activa",
+                "email_verificado": True,
+                "fecha_verificacion": datetime.now(timezone.utc)
+            }}
+        )
+        return result.modified_count > 0

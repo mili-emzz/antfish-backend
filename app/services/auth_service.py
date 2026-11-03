@@ -5,6 +5,7 @@ from typing import Any
 from argon2 import PasswordHasher
 from app.core.exceptions import DuplicateEmailError
 from app.repositories.mongo.user_repository import UserRepository
+from app.services.verification_service import VerificationService
 
 # Configuración estándar para Argon2id según RFC 9106
 _hasher = PasswordHasher(
@@ -18,8 +19,9 @@ _hasher = PasswordHasher(
 class AuthService:
     """Lógica de negocio para registro, autenticación y ciclo de vida de usuarios."""
 
-    def __init__(self, user_repository: UserRepository) -> None:
+    def __init__(self, user_repository: UserRepository, verification_service: VerificationService) -> None:
         self._user_repo = user_repository
+        self.verification_service = verification_service
 
     def hash_password(self, password: str) -> str:
         """Genera un hash seguro Argon2id para la contraseña."""
@@ -58,7 +60,13 @@ class AuthService:
                     existing_user["nombre"] = nombre.strip()
                     existing_user["password_hash"] = password_hash
                     existing_user["fecha_registro"] = datetime.now(timezone.utc)
+                    
+                    # Generar y guardar código en Redis
+                    await self.verification_service.generate_and_save_code(str(existing_user["_id"]))
                     return existing_user
+                
+                # Generar y guardar código en Redis
+                await self.verification_service.generate_and_save_code(str(existing_user["_id"]))
                 return updated_user
 
             # Si la cuenta ya está activa, suspendida o eliminada, genera conflicto (409)
@@ -80,5 +88,26 @@ class AuthService:
         }
 
         created_user = await self._user_repo.create_user(user_doc)
+        
+        # Generar y guardar código en Redis
+        await self.verification_service.generate_and_save_code(str(created_user["_id"]))
+        
         return created_user
 
+    async def verify_email(self, email: str, codigo: str) -> dict:
+        """Verifica el código efímero y activa la cuenta del usuario (RF-06.2)."""
+        normalized_email = email.strip().lower()
+        user = await self._user_repo.find_by_email(normalized_email)
+        
+        # Respuestas uniformes: si no existe o ya está activa, damos error genérico
+        if not user or user.get("estado_cuenta") != "pendiente_verificacion":
+            raise ValueError("Código inválido o expirado.") 
+
+        user_id = str(user["_id"])
+        is_valid = await self.verification_service.validate_code(user_id, codigo)
+        
+        if not is_valid:
+            raise ValueError("Código inválido o expirado.")
+
+        await self._user_repo.mark_as_verified(user_id)
+        return {"mensaje": "Cuenta verificada exitosamente. Ya puedes iniciar sesión."}

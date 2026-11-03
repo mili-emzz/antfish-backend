@@ -66,6 +66,9 @@ class UserRegisterResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    codigo: str = Field(..., min_length=6, max_length=6, description="Código numérico de 6 dígitos")
 
 # Alias de compatibilidad
 RegisterRequest = UserRegisterRequest
