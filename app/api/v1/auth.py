@@ -2,8 +2,12 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.schemas.auth import UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest
-from app.core.exceptions import DuplicateEmailError
+from app.api.schemas.auth import (
+    UserRegisterRequest,
+    UserRegisterResponse,
+    VerifyEmailRequest,
+)
+from app.core.exceptions import DuplicateEmailError, EmailDeliveryError
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -59,24 +63,30 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.message if hasattr(exc, "message") else str(exc),
         ) from exc
+    except EmailDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error al enviar el correo de verificación. Intenta nuevamente mediante el reenvío de código.",
+        ) from exc
 
 
 @router.post(
-    "/verify-email", 
-    status_code=status.HTTP_200_OK, 
-    summary="Verifica el correo del usuario (RF-06.2)"
+    "/verify-email",
+    status_code=status.HTTP_200_OK,
+    summary="Verifica el correo del usuario (RF-06.2)",
 )
 async def verify_email(
     payload: VerifyEmailRequest,
-    auth_service: AuthService = Depends(get_auth_service)
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Endpoint POST /api/v1/auth/verify-email para verificar el código de 6 dígitos."""
     try:
-        result = await auth_service.verify_email(email=payload.email, codigo=payload.codigo)
+        result = await auth_service.verify_email(
+            email=payload.email, codigo=payload.codigo
+        )
         return result
     except ValueError as exc:
         # Devuelve 400 uniformemente si algo falla, previniendo enumeración
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         )

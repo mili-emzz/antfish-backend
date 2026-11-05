@@ -19,7 +19,11 @@ _hasher = PasswordHasher(
 class AuthService:
     """Lógica de negocio para registro, autenticación y ciclo de vida de usuarios."""
 
-    def __init__(self, user_repository: UserRepository, verification_service: VerificationService) -> None:
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        verification_service: VerificationService,
+    ) -> None:
         self._user_repo = user_repository
         self.verification_service = verification_service
 
@@ -40,6 +44,7 @@ class AuthService:
         - Asigna estado inicial 'pendiente_verificacion' con email_verificado=False.
         - Si existe cuenta en 'pendiente_verificacion', sobrescribe datos y reinicia fecha_registro (D14).
         - Si existe cuenta activa o suspendida, responde con DuplicateEmailError (HTTP 409).
+        - Genera código numérico de 6 dígitos y lo envía vía Resend (RF-06.2).
         """
         normalized_email = email.strip().lower()
         existing_user = await self._user_repo.find_by_email(normalized_email)
@@ -56,17 +61,22 @@ class AuthService:
                     password_hash=password_hash,
                 )
                 if updated_user is None:
-                    # En caso improbable de no encontrarlo tras update
                     existing_user["nombre"] = nombre.strip()
                     existing_user["password_hash"] = password_hash
                     existing_user["fecha_registro"] = datetime.now(timezone.utc)
-                    
-                    # Generar y guardar código en Redis
-                    await self.verification_service.generate_and_save_code(str(existing_user["_id"]))
+
+                    # Generar código en Redis y despachar por correo vía Resend
+                    await self.verification_service.generate_and_save_code(
+                        str(existing_user["_id"]),
+                        email=normalized_email,
+                    )
                     return existing_user
-                
-                # Generar y guardar código en Redis
-                await self.verification_service.generate_and_save_code(str(existing_user["_id"]))
+
+                # Generar código en Redis y despachar por correo vía Resend
+                await self.verification_service.generate_and_save_code(
+                    str(existing_user["_id"]),
+                    email=normalized_email,
+                )
                 return updated_user
 
             # Si la cuenta ya está activa, suspendida o eliminada, genera conflicto (409)
@@ -88,24 +98,27 @@ class AuthService:
         }
 
         created_user = await self._user_repo.create_user(user_doc)
-        
-        # Generar y guardar código en Redis
-        await self.verification_service.generate_and_save_code(str(created_user["_id"]))
-        
+
+        # Generar código en Redis y despachar por correo vía Resend
+        await self.verification_service.generate_and_save_code(
+            str(created_user["_id"]),
+            email=normalized_email,
+        )
+
         return created_user
 
-    async def verify_email(self, email: str, codigo: str) -> dict:
+    async def verify_email(self, email: str, codigo: str) -> dict[str, Any]:
         """Verifica el código efímero y activa la cuenta del usuario (RF-06.2)."""
         normalized_email = email.strip().lower()
         user = await self._user_repo.find_by_email(normalized_email)
-        
+
         # Respuestas uniformes: si no existe o ya está activa, damos error genérico
         if not user or user.get("estado_cuenta") != "pendiente_verificacion":
-            raise ValueError("Código inválido o expirado.") 
+            raise ValueError("Código inválido o expirado.")
 
         user_id = str(user["_id"])
         is_valid = await self.verification_service.validate_code(user_id, codigo)
-        
+
         if not is_valid:
             raise ValueError("Código inválido o expirado.")
 
