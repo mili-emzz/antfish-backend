@@ -1,6 +1,8 @@
 """Módulo de seguridad criptográfica: Argon2id, JWT y HMAC (RF-06.8, RNF-03)."""
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 from typing import Any
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -94,3 +96,12 @@ def decode_refresh_token(token: str) -> dict[str, Any]:
         settings.JWT_REFRESH_SECRET,
         algorithms=[settings.JWT_ALGORITHM],
     )
+
+
+def generate_message_hmac(message: str) -> str:
+    """Genera un digesto HMAC-SHA256 con HMAC_PEPPER para el texto analizado (RN-14, RNF-03)."""
+    return hmac.new(
+        settings.HMAC_PEPPER.encode("utf-8"),
+        message.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()

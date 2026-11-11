@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
 import redis.asyncio as redis
 from app.core.config import settings
-from app.api.v1 import auth
+from app.api.v1 import analysis, auth
 from app.container import Container
 
 # 1. Crear el cliente de conexión a MongoDB
@@ -30,8 +30,9 @@ app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 # Vincular el contenedor al "state" de la aplicación
 app.state.container = container 
 
-# Registrar las rutas (el agente ya le puso prefijo /auth por dentro)
+# Registrar las rutas
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(analysis.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():

@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # Credenciales de APIs externas de inteligencia de amenazas (RF-02.2)
+    GOOGLE_WEB_RISK_API_KEY: str = ""
+    VIRUSTOTAL_API_KEY: str = ""
+    PHISHTANK_API_KEY: str = ""
+    REPUTATION_CLIENT_TIMEOUT: float = 1.5
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
