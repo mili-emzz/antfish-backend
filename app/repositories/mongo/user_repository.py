@@ -53,11 +53,12 @@ class UserRepository:
         )
         return await self.find_by_id(oid)
 
-    async def get_by_email(self, email: str) -> dict | None:
-        return await self.collection.find_one({"email": email})
+    async def get_by_email(self, email: str) -> dict[str, Any] | None:
+        """Alias de compatibilidad para find_by_email."""
+        return await self.find_by_email(email)
 
     async def mark_as_verified(self, user_id: str) -> bool:
-        result = await self.collection.update_one(
+        result = await self._collection.update_one(
             {"_id": ObjectId(user_id)},
             {"$set": {
                 "estado_cuenta": "activa",

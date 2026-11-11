@@ -3,11 +3,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
     UserRegisterRequest,
     UserRegisterResponse,
     VerifyEmailRequest,
 )
-from app.core.exceptions import DuplicateEmailError, EmailDeliveryError
+from app.core.exceptions import (
+    AccountNotVerifiedError,
+    DuplicateEmailError,
+    EmailDeliveryError,
+    UnauthorizedError,
+)
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -90,3 +97,38 @@ async def verify_email(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         )
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Inicio de sesión local de usuario (RF-06.8)",
+    description=(
+        "Valida credenciales con Argon2id antes de verificar el estado. "
+        "Devuelve Access Token (30 min) y Refresh Token (30 días). "
+        "Si la cuenta sigue en 'pendiente_verificacion', devuelve HTTP 403 Forbidden."
+    ),
+)
+async def login(
+    payload: LoginRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> LoginResponse:
+    """Endpoint POST /api/v1/auth/login para inicio de sesión."""
+    try:
+        tokens = await auth_service.authenticate_user(
+            email=payload.email,
+            password=payload.password,
+        )
+        return LoginResponse(**tokens)
+    except UnauthorizedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=exc.message if hasattr(exc, "message") else "Credenciales inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except AccountNotVerifiedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=exc.message if hasattr(exc, "message") else "ACCOUNT_NOT_VERIFIED",
+        ) from exc

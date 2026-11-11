@@ -3,7 +3,17 @@
 from datetime import datetime, timezone
 from typing import Any
 from argon2 import PasswordHasher
-from app.core.exceptions import DuplicateEmailError
+
+from app.core.exceptions import (
+    AccountNotVerifiedError,
+    DuplicateEmailError,
+    UnauthorizedError,
+)
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    verify_password,
+)
 from app.repositories.mongo.user_repository import UserRepository
 from app.services.verification_service import VerificationService
 
@@ -124,3 +134,56 @@ class AuthService:
 
         await self._user_repo.mark_as_verified(user_id)
         return {"mensaje": "Cuenta verificada exitosamente. Ya puedes iniciar sesión."}
+
+    async def authenticate_user(
+        self,
+        email: str,
+        password: str,
+    ) -> dict[str, str]:
+        """Autentica un usuario local y genera tokens Access y Refresh (RF-06.8, D12).
+
+        1. Busca el usuario en MongoDB por email normalizado.
+        2. Valida credenciales con Argon2id ANTES de evaluar el estado de la cuenta.
+        3. Si credenciales inválidas (usuario no existe, sin hash o contraseña errónea): UnauthorizedError (401).
+        4. Si contraseña válida pero estado_cuenta == 'pendiente_verificacion': AccountNotVerifiedError (403).
+        5. Si estado_cuenta != 'activa': UnauthorizedError (401).
+        6. Genera access_token (30 min) y refresh_token (30 días).
+        """
+        normalized_email = email.strip().lower()
+        user = await self._user_repo.find_by_email(normalized_email)
+
+        # Validación uniforme de existencia y presencia de hash local
+        if not user or not user.get("password_hash"):
+            raise UnauthorizedError("Credenciales inválidas")
+
+        # Validación de contraseña con Argon2id ANTES de evaluar el estado (D12, ADR #62)
+        if not verify_password(password, user["password_hash"]):
+            raise UnauthorizedError("Credenciales inválidas")
+
+        # Si las credenciales son válidas, verificar estado_cuenta
+        estado = user.get("estado_cuenta")
+        if estado == "pendiente_verificacion":
+            raise AccountNotVerifiedError("ACCOUNT_NOT_VERIFIED")
+
+        if estado != "activa":
+            raise UnauthorizedError("Cuenta no autorizada")
+
+        # Generación de tokens JWT
+        user_id = str(user["_id"])
+        token_payload = {
+            "sub": user_id,
+            "email": user["email"],
+        }
+
+        access_token = create_access_token(token_payload)
+        refresh_token = create_refresh_token(token_payload)
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+        }
+
+    # Alias de conveniencia
+    login_user = authenticate_user
+    login = authenticate_user

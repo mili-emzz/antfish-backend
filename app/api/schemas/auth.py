@@ -66,11 +66,70 @@ class UserRegisterResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class VerifyEmailRequest(BaseModel):
-    email: EmailStr
+    """DTO de entrada para verificación de código de correo (RF-06.2)."""
+
+    email: EmailStr = Field(..., description="Correo electrónico del usuario")
     codigo: str = Field(..., min_length=6, max_length=6, description="Código numérico de 6 dígitos")
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class LoginRequest(BaseModel):
+    """DTO de entrada para inicio de sesión local (RF-06.8)."""
+
+    email: EmailStr = Field(
+        ...,
+        description="Correo electrónico del usuario",
+        examples=["usuario@correo.com"],
+    )
+    password: str = Field(
+        ...,
+        description="Contraseña en texto plano del usuario",
+        examples=["PasswordSeguro123!"],
+    )
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: Any) -> Any:
+        """Normaliza el correo electrónico a minúsculas y sin espacios (D5)."""
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class LoginResponse(BaseModel):
+    """DTO de salida con tokens JWT tras login exitoso (RF-06.8)."""
+
+    access_token: str = Field(
+        ...,
+        description="JWT Access Token para llamadas autenticadas (vigencia 30 min)",
+    )
+    refresh_token: str = Field(
+        ...,
+        description="JWT Refresh Token para renovación de sesión (vigencia 30 días)",
+    )
+    token_type: str = Field(
+        default="bearer",
+        description="Tipo de token para el encabezado Authorization",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 # Alias de compatibilidad
 RegisterRequest = UserRegisterRequest
 RegisterResponse = UserRegisterResponse
-
+UserLoginRequest = LoginRequest
+UserLoginResponse = LoginResponse
+TokenResponse = LoginResponse
