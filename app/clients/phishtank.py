@@ -68,8 +68,33 @@ class PhishTankClient(BaseReputationClient):
                 reputation=self._build_fallback_reputation(estado)
             )
 
+        # Diagnóstico: solo metadatos de la respuesta; nunca el cuerpo ni la URL.
+        content_type = response.headers.get("content-type", "desconocido").split(";")[0]
+        server = response.headers.get("server", "desconocido")
         try:
             data: dict[str, Any] = response.json()
+        except ValueError:
+            logger.warning(
+                "PhishTank devolvió una respuesta no JSON: "
+                f"status={response.status_code} content_type={content_type} "
+                f"bytes={len(response.content)} server={server}"
+            )
+            return ReputationResult(
+                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
+            )
+
+        if response.status_code != 200 or not isinstance(data, dict):
+            logger.warning(
+                "PhishTank respuesta inesperada: "
+                f"status={response.status_code} content_type={content_type} "
+                f"tipo_json={type(data).__name__} server={server}"
+            )
+            if not isinstance(data, dict):
+                return ReputationResult(
+                    reputation=self._build_fallback_reputation(SourceStatus.ERROR)
+                )
+
+        try:
             results = data.get("results", {})
 
             if isinstance(results, dict):

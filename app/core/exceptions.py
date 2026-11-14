@@ -78,3 +78,24 @@ class GoogleTokenInvalidError(AntFishError):
     def __init__(self, message: str = "Token de Google inválido") -> None:
         super().__init__(message)
 
+
+
+class AnalysisNotFoundError(AntFishError):
+    """Análisis inexistente o que no pertenece al usuario autenticado (HTTP 404)."""
+
+    def __init__(self, message: str = "Análisis no encontrado") -> None:
+        super().__init__(message)
+
+
+class InvalidCursorError(AntFishError):
+    """Cursor de paginación malformado (HTTP 400)."""
+
+    def __init__(self, message: str = "Cursor de paginación inválido") -> None:
+        super().__init__(message)
+
+
+class PersistenceError(AntFishError):
+    """Fallo al persistir o modificar datos en MongoDB (HTTP 503)."""
+
+    def __init__(self, message: str = "Servicio de almacenamiento no disponible") -> None:
+        super().__init__(message)

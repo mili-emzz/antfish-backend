@@ -128,3 +128,12 @@ class AnalysisResponse(BaseModel):
         description="Marca temporal en la que se generó el análisis",
     )
 
+
+
+class HistoryPageResponse(BaseModel):
+    """Página del historial de análisis con cursor opaco (RF-05.1, D8)."""
+
+    items: list[AnalysisResponse] = Field(default_factory=list)
+    next_cursor: str | None = Field(
+        default=None, description="Cursor opaco para la siguiente página; null si no hay más"
+    )

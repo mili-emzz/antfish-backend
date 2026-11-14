@@ -5,10 +5,14 @@ from app.clients.google_web_risk import GoogleWebRiskClient
 from app.clients.phishtank import PhishTankClient
 from app.clients.resend_email import ResendEmailClient
 from app.clients.virustotal import VirusTotalClient
+from app.repositories.mongo.analysis_repository import AnalysisRepository
+from app.repositories.mongo.metrics_repository import MetricsRepository
+from app.repositories.mongo.unit_of_work import UnitOfWork
 from app.repositories.mongo.user_repository import UserRepository
 from app.repositories.redis.verification_repository import VerificationRepository
 from app.services.analysis_service import AnalysisService
 from app.services.auth_service import AuthService
+from app.services.metrics_service import MetricsService
 from app.services.verification_service import VerificationService
 
 
@@ -18,6 +22,9 @@ class Container:
     def __init__(self, db: AsyncIOMotorDatabase, redis_client: Redis) -> None:
         # Repositorios
         self.user_repository = UserRepository(db)
+        self.analysis_repository = AnalysisRepository(db)
+        self.metrics_repository = MetricsRepository(db)
+        self.unit_of_work = UnitOfWork(db)
         self.verification_repo = VerificationRepository(redis_client)
 
         # Clientes externos de comunicación e inteligencia de amenazas (RF-02.2, RF-06.2)
@@ -39,4 +46,8 @@ class Container:
             web_risk_client=self.web_risk_client,
             virustotal_client=self.virustotal_client,
             phishtank_client=self.phishtank_client,
+            analysis_repository=self.analysis_repository,
+            metrics_repository=self.metrics_repository,
+            unit_of_work=self.unit_of_work,
         )
+        self.metrics_service = MetricsService(self.metrics_repository)

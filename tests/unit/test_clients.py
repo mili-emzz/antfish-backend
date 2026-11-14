@@ -182,3 +182,31 @@ async def test_phishtank_user_agent_and_detection() -> None:
         assert result.reputation.detecciones == 1
         assert result.reputation.api == "phishtank"
 
+
+
+@pytest.mark.asyncio
+async def test_phishtank_non_json_degrades_to_error_and_logs_only_metadata(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Diagnóstico: respuesta no JSON -> estado error; el log no incluye cuerpo ni URL."""
+    import logging
+
+    from app.core.logging import logger as app_logger
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, text="<html>SECRETO-DEL-CUERPO</html>", headers={"content-type": "text/html"}
+        )
+
+    app_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="antfish"):
+            client = PhishTankClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+            result = await client.check_url("https://evil.example/login")
+    finally:
+        app_logger.propagate = False
+
+    assert result.reputation.estado == SourceStatus.ERROR
+    assert "content_type=text/html" in caplog.text
+    assert "SECRETO-DEL-CUERPO" not in caplog.text
+    assert "evil.example" not in caplog.text

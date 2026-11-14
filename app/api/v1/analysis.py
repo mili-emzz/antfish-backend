@@ -1,8 +1,16 @@
 """Controlador de rutas para el análisis de URLs y SMS (v1)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from typing import Any
 
-from app.api.schemas.analysis import AnalysisRequest, AnalysisResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+
+from app.api.deps import get_current_user
+from app.api.schemas.analysis import (
+    AnalysisRequest,
+    AnalysisResponse,
+    HistoryPageResponse,
+)
+from app.core.exceptions import AnalysisNotFoundError, InvalidCursorError
 from app.services.analysis_service import AnalysisService
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -37,12 +45,80 @@ def get_analysis_service(request: Request) -> AnalysisService:
 )
 async def analyze_content(
     payload: AnalysisRequest,
+    user: dict[str, Any] = Depends(get_current_user),
     analysis_service: AnalysisService = Depends(get_analysis_service),
 ) -> AnalysisResponse:
     """Ejecuta el análisis combinado de amenazas y devuelve el diagnóstico."""
     result = await analysis_service.analyze(
         tipo_entrada=payload.tipo_entrada,
         contenido=payload.contenido,
+        user_id=str(user["_id"]),
     )
     return AnalysisResponse(**result)
+
+
+@router.get(
+    "",
+    response_model=HistoryPageResponse,
+    summary="Historial de análisis del usuario",
+    description="Historial paginado por cursor opaco (fecha, _id), 20 por página (RF-05.1, D8).",
+)
+async def list_history(
+    cursor: str | None = None,
+    user: dict[str, Any] = Depends(get_current_user),
+    analysis_service: AnalysisService = Depends(get_analysis_service),
+) -> HistoryPageResponse:
+    """Devuelve una página del historial del usuario autenticado."""
+    try:
+        items, next_cursor = await analysis_service.list_history(
+            str(user["_id"]), cursor
+        )
+    except InvalidCursorError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message
+        ) from exc
+    return HistoryPageResponse(
+        items=[AnalysisResponse(**i) for i in items], next_cursor=next_cursor
+    )
+
+
+@router.get(
+    "/{analysis_id}",
+    response_model=AnalysisResponse,
+    summary="Detalle de un análisis",
+)
+async def get_analysis(
+    analysis_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    analysis_service: AnalysisService = Depends(get_analysis_service),
+) -> AnalysisResponse:
+    """Detalle de un análisis propio; 404 si no existe o es de otro usuario."""
+    try:
+        result = await analysis_service.get_detail(str(user["_id"]), analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=exc.message
+        ) from exc
+    return AnalysisResponse(**result)
+
+
+@router.delete(
+    "/{analysis_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar un análisis",
+    description="Elimina el análisis y sus respuestas crudas sin alterar las métricas (O11).",
+)
+async def delete_analysis(
+    analysis_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    analysis_service: AnalysisService = Depends(get_analysis_service),
+) -> Response:
+    """Borra un análisis propio en transacción ACID."""
+    try:
+        await analysis_service.delete_analysis(str(user["_id"]), analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=exc.message
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 

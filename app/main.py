@@ -3,8 +3,9 @@ from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
 import redis.asyncio as redis
 from app.core.config import settings
-from app.api.v1 import analysis, auth
+from app.api.v1 import analysis, auth, metrics
 from app.container import Container
+from app.api.errors import register_exception_handlers
 
 # 1. Crear el cliente de conexión a MongoDB
 db_client = AsyncIOMotorClient(settings.MONGODB_URL)
@@ -20,12 +21,20 @@ container = Container(db=db, redis_client=redis_client)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail-fast: las transacciones ACID (UnitOfWork) exigen un replica set.
+    hello = await db_client.admin.command("hello")
+    if not hello.get("setName"):
+        raise RuntimeError(
+            "MongoDB no es un replica set: las transacciones ACID no están disponibles. "
+            "Use docker compose up -d mongo y MONGODB_URL con ?replicaSet=rs0."
+        )
     yield
     # Cerrar las conexiones limpiamente cuando se apague el servidor
     db_client.close()
     await redis_client.close()
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
+register_exception_handlers(app)
 
 # Vincular el contenedor al "state" de la aplicación
 app.state.container = container 
@@ -33,6 +42,7 @@ app.state.container = container
 # Registrar las rutas
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(analysis.router, prefix="/api/v1")
+app.include_router(metrics.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():

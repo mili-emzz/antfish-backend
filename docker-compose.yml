@@ -1,0 +1,77 @@
+# Dependencias locales de AntFish: MongoDB (replica set rs0, requerido por las
+# transacciones ACID del UnitOfWork) y Redis.
+#
+# Uso:  docker compose up -d mongo redis
+# Las credenciales NO viven aquí: se leen de .env (ver .env.example).
+
+services:
+  # Genera una sola vez el keyfile de autenticación interna del replica set.
+  mongo-keyfile:
+    image: alpine:3.20
+    restart: "no"
+    volumes:
+      - mongo_keyfile:/keys
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ ! -s /keys/keyfile ]; then
+          head -c 700 /dev/urandom | base64 > /keys/keyfile
+        fi
+        chown 999:999 /keys/keyfile
+        chmod 400 /keys/keyfile
+
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    depends_on:
+      mongo-keyfile:
+        condition: service_completed_successfully
+    command: ["mongod", "--replSet", "rs0", "--keyFile", "/keys/keyfile", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?defina MONGO_ROOT_USER en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?defina MONGO_ROOT_PASSWORD en .env}
+    ports:
+      # Solo accesible desde la máquina local.
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - mongo_keyfile:/keys:ro
+    healthcheck:
+      # Inicia el replica set la primera vez (host localhost:27017 para apps
+      # ejecutadas en el host) y reporta "healthy" cuando hay PRIMARY.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - -u
+        - ${MONGO_ROOT_USER}
+        - -p
+        - ${MONGO_ROOT_PASSWORD}
+        - --authenticationDatabase
+        - admin
+        - --eval
+        - |
+          try { if (rs.status().myState === 1) quit(0); } catch (e) {
+            rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]});
+          }
+          quit(1);
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mongo_data:
+  mongo_keyfile:
