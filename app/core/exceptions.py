@@ -47,7 +47,19 @@ class QuotaExceededError(AntFishError):
 class RateLimitExceededError(AntFishError):
     """Límite de tasa de peticiones excedido (HTTP 429)."""
 
-    def __init__(self, message: str = "Límite de peticiones excedido") -> None:
+    def __init__(
+        self,
+        message: str = "Límite de peticiones excedido",
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class RateLimitBackendError(AntFishError):
+    """Redis no disponible para un control de tasa fail-closed (HTTP 503)."""
+
+    def __init__(self, message: str = "Servicio temporalmente no disponible") -> None:
         super().__init__(message)
 
 

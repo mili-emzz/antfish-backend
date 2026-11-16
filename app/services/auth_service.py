@@ -13,6 +13,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     verify_password,
+    verify_password_decoy,
 )
 from app.repositories.mongo.user_repository import UserRepository
 from app.services.verification_service import VerificationService
@@ -154,6 +155,8 @@ class AuthService:
 
         # Validación uniforme de existencia y presencia de hash local
         if not user or not user.get("password_hash"):
+            # Mismo costo de Argon2id que un login real: evita enumerar correos por tiempo.
+            verify_password_decoy(password)
             raise UnauthorizedError("Credenciales inválidas")
 
         # Validación de contraseña con Argon2id ANTES de evaluar el estado (D12, ADR #62)

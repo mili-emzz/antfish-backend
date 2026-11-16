@@ -2,10 +2,12 @@
 
 from datetime import datetime, timedelta, timezone
 import hashlib
+import functools
 import hmac
+import secrets
 from typing import Any
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import InvalidHashError, VerificationError
 import jwt
 
 from app.core.config import settings
@@ -28,8 +30,19 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica si una contraseña plana coincide con el hash Argon2id."""
     try:
         return _password_hasher.verify(hashed_password, plain_password)
-    except (VerifyMismatchError, Exception):
+    except (VerificationError, InvalidHashError):
         return False
+
+
+@functools.cache
+def _decoy_hash() -> str:
+    """Hash Argon2id aleatorio de un solo uso para igualar tiempos cuando el usuario no existe."""
+    return _password_hasher.hash(secrets.token_urlsafe(24))
+
+
+def verify_password_decoy(plain_password: str) -> None:
+    """Consume el mismo costo de Argon2id que una verificación real (anti-enumeración por tiempo)."""
+    verify_password(plain_password, _decoy_hash())
 
 
 def create_access_token(
@@ -86,6 +99,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
         token,
         settings.JWT_SECRET,
         algorithms=[settings.JWT_ALGORITHM],
+        options={"require": ["exp", "iat", "sub"]},
     )
 
 
@@ -95,6 +109,7 @@ def decode_refresh_token(token: str) -> dict[str, Any]:
         token,
         settings.JWT_REFRESH_SECRET,
         algorithms=[settings.JWT_ALGORITHM],
+        options={"require": ["exp", "iat", "sub"]},
     )
 
 

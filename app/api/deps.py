@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timezone
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import jwt
@@ -70,4 +71,36 @@ async def get_current_user(
         )
     if estado != "activa":
         raise _unauthorized()
+    return user
+
+
+def _get_rate_limiter(request: Request) -> Any:
+    container = getattr(request.app.state, "container", None)
+    limiter = getattr(container, "rate_limiter", None)
+    if limiter is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio temporalmente no disponible",
+        )
+    return limiter
+
+
+def rate_limit_auth(endpoint: str) -> Callable[[Request], Awaitable[None]]:
+    """Dependencia: máx. 5 intentos por minuto por IP en el endpoint de auth (fail-closed)."""
+
+    async def _dependency(request: Request) -> None:
+        # request.client.host ya refleja X-Forwarded-For solo si uvicorn confía en el proxy
+        # (--proxy-headers/--forwarded-allow-ips); no se leen cabeceras manualmente (anti-spoofing).
+        ip = request.client.host if request.client else "desconocida"
+        await _get_rate_limiter(request).check_auth(endpoint, ip)
+
+    return _dependency
+
+
+async def rate_limit_analysis(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Dependencia: máx. 20 análisis por minuto por usuario (fail-open ante fallo de Redis)."""
+    await _get_rate_limiter(request).check_analysis(str(user["_id"]))
     return user

@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, rate_limit_analysis
 from app.api.schemas.analysis import (
     AnalysisRequest,
     AnalysisResponse,
@@ -45,7 +45,7 @@ def get_analysis_service(request: Request) -> AnalysisService:
 )
 async def analyze_content(
     payload: AnalysisRequest,
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(rate_limit_analysis),
     analysis_service: AnalysisService = Depends(get_analysis_service),
 ) -> AnalysisResponse:
     """Ejecuta el análisis combinado de amenazas y devuelve el diagnóstico."""

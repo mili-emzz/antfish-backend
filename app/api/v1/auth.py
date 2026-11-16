@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.api.deps import rate_limit_auth
 from app.api.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -40,6 +41,7 @@ def get_auth_service(request: Request) -> AuthService:
     "/register",
     response_model=UserRegisterResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_auth("register"))],
     summary="Registro local de usuarios",
     description=(
         "Registra un nuevo usuario con proveedor local ('local'), hashea la contraseña con Argon2id "
@@ -103,6 +105,7 @@ async def verify_email(
     "/login",
     response_model=LoginResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("login"))],
     summary="Inicio de sesión local de usuario (RF-06.8)",
     description=(
         "Valida credenciales con Argon2id antes de verificar el estado. "

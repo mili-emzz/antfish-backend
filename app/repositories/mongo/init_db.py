@@ -363,18 +363,16 @@ async def _sync_collection_validator(
             )
 
 
-def _keys_match(
-    model_keys: list[tuple[str, Any]],
-    existing_key_doc: Mapping[str, Any],
-) -> bool:
+def _key_items(keys: Any) -> list[tuple[str, Any]]:
+    """Normaliza claves de índice (mapeo o lista de pares) a una lista ordenada de pares."""
+    if isinstance(keys, Mapping):
+        return list(keys.items())
+    return [(k, v) for k, v in keys]
+
+
+def _keys_match(model_keys: Any, existing_key_doc: Any) -> bool:
     """Compara si la secuencia de campos y ordenes coincide exactamente."""
-    existing_items = list(existing_key_doc.items())
-    if len(model_keys) != len(existing_items):
-        return False
-    for (k1, v1), (k2, v2) in zip(model_keys, existing_items, strict=False):
-        if k1 != k2 or v1 != v2:
-            return False
-    return True
+    return _key_items(model_keys) == _key_items(existing_key_doc)
 
 
 async def _sync_collection_indexes(
@@ -387,7 +385,7 @@ async def _sync_collection_indexes(
     existing_indexes: dict[str, Any] = await col.index_information()
 
     for model in models:
-        model_name = model.name
+        model_name = model.document["name"]
         model_document = model.document
         model_keys = model_document["key"]
         model_options = {
@@ -540,3 +538,26 @@ async def init_db(
     # 3. Siembra condicional
     seed_path = initial_data_path or Path(__file__).parent / "initial_data.json"
     await _seed_data_if_needed(db, seed_path)
+
+
+async def _run_cli() -> None:
+    """Ejecuta init_db con MONGODB_MIGRATION_URL (usuario con dbAdmin), nunca con el de la API."""
+    from pymongo import AsyncMongoClient
+
+    from app.core.config import settings
+
+    if not settings.MONGODB_MIGRATION_URL:
+        raise SystemExit("Defina MONGODB_MIGRATION_URL (usuario antfish_migrator) para migrar.")
+    client: AsyncMongoClient[Mapping[str, Any]] = AsyncMongoClient(
+        settings.MONGODB_MIGRATION_URL
+    )
+    try:
+        await init_db(client[settings.DATABASE_NAME])
+    finally:
+        await client.close()
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(_run_cli())

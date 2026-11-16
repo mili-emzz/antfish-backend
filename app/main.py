@@ -33,7 +33,14 @@ async def lifespan(app: FastAPI):
     db_client.close()
     await redis_client.close()
 
-app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
+_is_prod = settings.ENVIRONMENT == "production"
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    lifespan=lifespan,
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
+)
 register_exception_handlers(app)
 
 # Vincular el contenedor al "state" de la aplicación

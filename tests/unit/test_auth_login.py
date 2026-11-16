@@ -38,6 +38,7 @@ def test_app(auth_service):
     class DummyContainer:
         def __init__(self, service):
             self.auth_service = service
+            self.rate_limiter = AsyncMock()  # permisivo; el límite se prueba en test_rate_limit_quota
 
     app.state.container = DummyContainer(auth_service)
     return app

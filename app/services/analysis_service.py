@@ -16,11 +16,13 @@ from typing import Any
 
 from bson import ObjectId
 from pymongo.errors import PyMongoError
+from redis.exceptions import RedisError
 
 from app.clients.base import ReputationResult
 from app.clients.google_web_risk import GoogleWebRiskClient
 from app.clients.phishtank import PhishTankClient
 from app.clients.virustotal import VirusTotalClient
+from app.core.config import settings
 from app.core.exceptions import AnalysisNotFoundError, PersistenceError
 from app.core.logging import logger
 from app.core.security import generate_message_hmac
@@ -40,6 +42,7 @@ from app.engine.url_heuristics import select_top_urls
 from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
 from app.repositories.mongo.unit_of_work import UnitOfWork
+from app.repositories.redis.quota_repository import QuotaRepository
 
 API_RESPONSE_TTL_DAYS = 30
 
@@ -55,6 +58,7 @@ class AnalysisService:
         analysis_repository: AnalysisRepository | None = None,
         metrics_repository: MetricsRepository | None = None,
         unit_of_work: UnitOfWork | None = None,
+        quota_repository: QuotaRepository | None = None,
     ) -> None:
         self.web_risk_client = web_risk_client
         self.virustotal_client = virustotal_client
@@ -62,6 +66,31 @@ class AnalysisService:
         self._analysis_repo = analysis_repository
         self._metrics_repo = metrics_repository
         self._uow = unit_of_work
+        self._quota_repo = quota_repository
+
+    async def _consume_quota(self, api: str) -> bool:
+        """Consume cuota local de la API; fail-open si Redis no responde (RNF-02)."""
+        if self._quota_repo is None:
+            return True
+        per_minute, daily = settings.quota_limits()[api]
+        try:
+            return await self._quota_repo.try_consume(api, per_minute, daily)
+        except RedisError as exc:
+            logger.warning(f"Control de cuota no disponible (fail-open): {type(exc).__name__}")
+            return True
+
+    @staticmethod
+    async def _quota_exhausted(api: str) -> ReputationResult:
+        """Resultado degradado cuando la cuota local de la API está agotada (RN-13)."""
+        return ReputationResult(
+            reputation=Reputation(
+                api=api,
+                estado=SourceStatus.RATE_LIMIT,
+                positivo=False,
+                detecciones=None,
+                desde_cache=False,
+            )
+        )
 
     async def _query_external_apis_for_url(
         self,
@@ -74,10 +103,18 @@ class AnalysisService:
             booleano que indica si alguna API degradó a timeout/rate_limit/error y las
             respuestas crudas por API (solo las no nulas) para auditoría (D1).
         """
+        api_names = ["google_web_risk", "virustotal", "phishtank"]
+        check_fns = [
+            self.web_risk_client.check_url,
+            self.virustotal_client.check_url,
+            self.phishtank_client.check_url,
+        ]
+
+        # Cuota dual atómica por API (P5): sin cuota -> estado rate_limit sin llamar a la API.
+        permits = await asyncio.gather(*(self._consume_quota(n) for n in api_names))
         tasks = [
-            self.web_risk_client.check_url(url),
-            self.virustotal_client.check_url(url),
-            self.phishtank_client.check_url(url),
+            fn(url) if allowed else self._quota_exhausted(name)
+            for fn, name, allowed in zip(check_fns, api_names, permits)
         ]
 
         # Consultas paralelas concurrentes mediante asyncio.gather (RF-02.2)
@@ -86,7 +123,6 @@ class AnalysisService:
         reputations: list[Reputation] = []
         raw_by_api: dict[str, Any] = {}
         tiene_fallos = False
-        api_names = ["google_web_risk", "virustotal", "phishtank"]
 
         for idx, item in enumerate(raw_results):
             api_name = api_names[idx]

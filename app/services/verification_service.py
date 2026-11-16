@@ -2,12 +2,13 @@
 
 import hashlib
 import hmac
-import random
+import secrets
 
 from app.clients.resend_email import ResendEmailClient
 from app.core.config import settings
 from app.core.exceptions import EmailDeliveryError, VerificationAttemptsExceededError
 from app.repositories.redis.verification_repository import VerificationRepository
+from app.services.rate_limiter import RateLimiter
 
 
 class VerificationService:
@@ -17,8 +18,10 @@ class VerificationService:
         self,
         verification_repo: VerificationRepository,
         email_client: ResendEmailClient | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self.repo = verification_repo
+        self.rate_limiter = rate_limiter
         self.email_client = email_client or ResendEmailClient()
 
     def hash_code(self, code: str) -> str:
@@ -31,7 +34,11 @@ class VerificationService:
 
         Si ocurre una falla de red o error de entrega en Resend, lanza EmailDeliveryError (RNF-06).
         """
-        plain_code = f"{random.randint(0, 999999):06d}"
+        # Máx. 3 envíos/hora por usuario (D17); fail-closed. Sin código no se envía correo.
+        if self.rate_limiter is not None:
+            await self.rate_limiter.check_resend(user_id)
+
+        plain_code = f"{secrets.randbelow(1_000_000):06d}"
         hashed_code = self.hash_code(plain_code)
         await self.repo.save_code(user_id, hashed_code)
 
