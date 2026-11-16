@@ -271,4 +271,3 @@ def select_top_urls(
 
     # Devolver las 2 primeras URLs analizadas
     return [item[0] for item in evaluated[:2]]
-

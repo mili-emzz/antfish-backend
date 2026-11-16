@@ -13,17 +13,33 @@ from app.engine.text_heuristics import analyze_text
 from app.engine.url_heuristics import analyze_url, select_top_urls
 
 
-def rule(codigo: str, activa: bool = True, valores: list[str] | None = None,
-         marcas: list[str] | None = None, puntos: int | None = None) -> Rule:
+def rule(
+    codigo: str,
+    activa: bool = True,
+    valores: list[str] | None = None,
+    marcas: list[str] | None = None,
+    puntos: int | None = None,
+) -> Rule:
     capa, pts = RULE_CATALOG[codigo]
     return Rule(
-        codigo=codigo, capa=capa, titulo=codigo, descripcion="", puntos=puntos or pts,
-        parametros={"marcas_codigos": marcas or [], "valores": valores or []}, activa=activa,
+        codigo=codigo,
+        capa=capa,
+        titulo=codigo,
+        descripcion="",
+        puntos=puntos or pts,
+        parametros={"marcas_codigos": marcas or [], "valores": valores or []},
+        activa=activa,
     )
 
 
-ACME = Brand(codigo="acme", nombre="Acme Bank", categoria="banca",
-             dominios_oficiales=["acme.com"], variantes_ofuscadas=["4cme"], activa=True)
+ACME = Brand(
+    codigo="acme",
+    nombre="Acme Bank",
+    categoria="banca",
+    dominios_oficiales=["acme.com"],
+    variantes_ofuscadas=["4cme"],
+    activa=True,
+)
 
 
 def codes(features) -> set[str]:
@@ -102,8 +118,14 @@ def test_inactive_impersonation_rule_keeps_brand_override_but_drops_points() -> 
 
 def test_brand_filter_of_the_rule_limits_detection() -> None:
     url = "https://acme-seguro.login-verifica.net/"
-    other = Brand(codigo="otra", nombre="Otra", categoria="x", dominios_oficiales=["otra.com"],
-                  variantes_ofuscadas=[], activa=True)
+    other = Brand(
+        codigo="otra",
+        nombre="Otra",
+        categoria="x",
+        dominios_oficiales=["otra.com"],
+        variantes_ofuscadas=[],
+        activa=True,
+    )
     only_other = [rule("URL_SUBDOMINIO_ENGANOSO", marcas=["otra"])]
     assert analyze_url(url, brands=[ACME, other], rules=only_other).marca_detectada is None
     only_acme = [rule("URL_SUBDOMINIO_ENGANOSO", marcas=["ACME"])]
@@ -111,9 +133,17 @@ def test_brand_filter_of_the_rule_limits_detection() -> None:
 
 
 def test_inactive_brand_is_ignored() -> None:
-    off = Brand(codigo="acme", nombre="Acme Bank", categoria="banca", dominios_oficiales=["acme.com"],
-                variantes_ofuscadas=["4cme"], activa=False)
-    assert analyze_url("https://acme-seguro.login-verifica.net/", brands=[off]).marca_detectada is None
+    off = Brand(
+        codigo="acme",
+        nombre="Acme Bank",
+        categoria="banca",
+        dominios_oficiales=["acme.com"],
+        variantes_ofuscadas=["4cme"],
+        activa=False,
+    )
+    assert (
+        analyze_url("https://acme-seguro.login-verifica.net/", brands=[off]).marca_detectada is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -131,8 +161,9 @@ def test_text_rules_can_be_disabled(codigo: str, texto: str) -> None:
 
 
 def test_text_points_ignore_catalog_points() -> None:
-    f = analyze_text("URGENTE: tu cuenta será suspendida",
-                     rules=[rule("TXT_LENGUAJE_URGENCIA", puntos=99)])
+    f = analyze_text(
+        "URGENTE: tu cuenta será suspendida", rules=[rule("TXT_LENGUAJE_URGENCIA", puntos=99)]
+    )
     assert [x.puntos for x in f if x.regla_codigo == "TXT_LENGUAJE_URGENCIA"] == [10]
 
 

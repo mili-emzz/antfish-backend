@@ -1,5 +1,6 @@
 from redis.asyncio import Redis
 
+
 class VerificationRepository:
     def __init__(self, redis_client: Redis):
         self.redis = redis_client
@@ -11,7 +12,9 @@ class VerificationRepository:
     async def get_code(self, user_id: str) -> str | None:
         """Obtiene el código hasheado."""
         code = await self.redis.get(f"verif:{user_id}")
-        return code.decode("utf-8") if code else None
+        if not code:
+            return None
+        return code.decode("utf-8") if isinstance(code, bytes) else code
 
     async def delete_code(self, user_id: str) -> None:
         """Elimina el código tras un uso exitoso."""
@@ -23,6 +26,6 @@ class VerificationRepository:
         if attempts == 1:
             await self.redis.expire(f"verif_attempts:{user_id}", 600)
         return attempts
-    
+
     async def clear_attempts(self, user_id: str) -> None:
         await self.redis.delete(f"verif_attempts:{user_id}")

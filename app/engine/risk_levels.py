@@ -22,4 +22,3 @@ def get_risk_level(score: int) -> RiskLevel:
     if clamped_score < 80:
         return RiskLevel.ALTO
     return RiskLevel.CRITICO
-

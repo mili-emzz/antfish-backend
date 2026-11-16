@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any
+
 import httpx
 
 from app.clients.base import BaseReputationClient, ReputationResult
@@ -57,9 +58,7 @@ class VirusTotalClient(BaseReputationClient):
         """
         if not self.api_key:
             logger.warning("VIRUSTOTAL_API_KEY no configurada; degradando consulta")
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))
 
         url_id = self.calculate_url_id(url)
         endpoint = f"{self.BASE_URL}/{url_id}"
@@ -85,21 +84,18 @@ class VirusTotalClient(BaseReputationClient):
                     detecciones=0,
                     desde_cache=False,
                 ),
-                raw_response={"message": "URL not found in VirusTotal database", "status_code": 404},
+                raw_response={
+                    "message": "URL not found in VirusTotal database",
+                    "status_code": 404,
+                },
             )
 
         if estado != SourceStatus.OK or response is None:
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(estado)
-            )
+            return ReputationResult(reputation=self._build_fallback_reputation(estado))
 
         if response.status_code != 200:
-            logger.warning(
-                f"VirusTotal retornó código inesperado {response.status_code}"
-            )
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
+            logger.warning(f"VirusTotal retornó código inesperado {response.status_code}")
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))
 
         try:
             data: dict[str, Any] = response.json()
@@ -121,11 +117,6 @@ class VirusTotalClient(BaseReputationClient):
                 ),
                 raw_response=data,
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                f"Error al deserializar respuesta de VirusTotal: {type(exc).__name__}"
-            )
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
-
+        except Exception as exc:
+            logger.error(f"Error al deserializar respuesta de VirusTotal: {type(exc).__name__}")
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))

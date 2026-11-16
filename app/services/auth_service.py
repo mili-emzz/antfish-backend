@@ -1,7 +1,8 @@
 """Servicio de autenticación y gestión de usuarios (RF-06)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 import jwt
 from argon2 import PasswordHasher
 from bson import ObjectId
@@ -15,9 +16,9 @@ from app.core.exceptions import (
     DuplicateEmailError,
     EmailDeliveryError,
     PersistenceError,
-    ReauthMethodUnavailableError,
     RateLimitBackendError,
     RateLimitExceededError,
+    ReauthMethodUnavailableError,
     UnauthorizedError,
     VerificationAttemptsExceededError,
 )
@@ -99,7 +100,7 @@ class AuthService:
                 if updated_user is None:
                     existing_user["nombre"] = nombre.strip()
                     existing_user["password_hash"] = password_hash
-                    existing_user["fecha_registro"] = datetime.now(timezone.utc)
+                    existing_user["fecha_registro"] = datetime.now(UTC)
 
                     # Generar código en Redis y despachar por correo vía Resend
                     await self.verification_service.generate_and_save_code(
@@ -118,7 +119,7 @@ class AuthService:
             # Si la cuenta ya está activa, suspendida o eliminada, genera conflicto (409)
             raise DuplicateEmailError("El correo electrónico ya se encuentra registrado")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user_doc: dict[str, Any] = {
             "email": normalized_email,
             "proveedor_auth": "local",
@@ -186,11 +187,7 @@ class AuthService:
         sin revelar si el correo existe.
         """
         user = await self._user_repo.find_by_email(email.strip().lower())
-        if (
-            not user
-            or user.get("estado_cuenta") != "activa"
-            or not user.get("password_hash")
-        ):
+        if not user or user.get("estado_cuenta") != "activa" or not user.get("password_hash"):
             return
         try:
             await self.verification_service.generate_and_save_code(
@@ -212,17 +209,11 @@ class AuthService:
         """
         generic = ValueError("Código inválido o expirado.")
         user = await self._user_repo.find_by_email(email.strip().lower())
-        if (
-            not user
-            or user.get("estado_cuenta") != "activa"
-            or not user.get("password_hash")
-        ):
+        if not user or user.get("estado_cuenta") != "activa" or not user.get("password_hash"):
             raise generic
 
         try:
-            is_valid = await self.verification_service.validate_code(
-                str(user["_id"]), codigo
-            )
+            is_valid = await self.verification_service.validate_code(str(user["_id"]), codigo)
         except VerificationAttemptsExceededError:
             raise generic from None
         if not is_valid:
@@ -258,13 +249,11 @@ class AuthService:
         changed_at = user.get("password_changed_at")
         if changed_at is not None:
             if changed_at.tzinfo is None:
-                changed_at = changed_at.replace(tzinfo=timezone.utc)
+                changed_at = changed_at.replace(tzinfo=UTC)
             if int(claims.get("iat", 0)) < int(changed_at.timestamp()):
                 raise UnauthorizedError("Credenciales inválidas")
 
-        access_token = create_access_token(
-            {"sub": str(user["_id"]), "email": user["email"]}
-        )
+        access_token = create_access_token({"sub": str(user["_id"]), "email": user["email"]})
         return {"access_token": access_token, "token_type": "bearer"}
 
     async def authenticate_user(
@@ -339,14 +328,18 @@ class AuthService:
 
             if user is None:
                 try:
-                    user = await self._create_google_user(identity.sub, identity.email, identity.nombre)
+                    user = await self._create_google_user(
+                        identity.sub, identity.email, identity.nombre
+                    )
                 except DuplicateKeyError:
                     continue
                 return self._issue_tokens(user)
 
             estado = user.get("estado_cuenta")
             if estado == "pendiente_verificacion":
-                if not await self._user_repo.activate_pending_with_google(user["_id"], identity.sub):
+                if not await self._user_repo.activate_pending_with_google(
+                    user["_id"], identity.sub
+                ):
                     continue
             elif estado == "activa":
                 current_sub = user.get("google_sub")
@@ -354,7 +347,9 @@ class AuthService:
                     if not await self._user_repo.link_google_sub(user["_id"], identity.sub):
                         continue
                 elif current_sub != identity.sub:
-                    raise AccountConflictError("La cuenta ya está vinculada a otra identidad de Google")
+                    raise AccountConflictError(
+                        "La cuenta ya está vinculada a otra identidad de Google"
+                    )
             else:
                 raise UnauthorizedError("Cuenta no autorizada")
             return self._issue_tokens(user)
@@ -364,7 +359,7 @@ class AuthService:
     async def _create_google_user(
         self, google_sub: str, email: str, nombre: str | None
     ) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         display = (nombre or email.split("@", 1)[0])[:100]
         return await self._user_repo.create_user(
             {
@@ -385,7 +380,8 @@ class AuthService:
     async def delete_account(self, user: dict[str, Any], password: str) -> None:
         """Baja de cuenta local con reautenticación, anonimización y purga ACID (RF-06.7, O12, D4).
 
-        - Cuentas sin password_hash (Google) requieren id_token: aún no disponible.
+        - Cuentas con password_hash (incluidas locales con Google vinculado) se reautentican con
+          contraseña. Cuentas solo Google (sin password_hash) requerirían id_token: aún no disponible.
         - Contraseña incorrecta: UnauthorizedError.
         - Purga analisis, respuestas_apis y metricas_usuario y anonimiza el usuario en una
           sola transacción; si algo falla se revierte todo (PersistenceError, 503).

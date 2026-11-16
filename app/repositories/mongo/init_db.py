@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -134,9 +134,7 @@ VALIDATORS: dict[str, dict[str, Any]] = {
                 },
                 "nivel_riesgo": {"enum": ["bajo", "medio", "alto", "critico"]},
                 "tipo_entrada": {"enum": ["sms", "url"]},
-                "motivo_cortocircuito": {
-                    "enum": ["lista_negra", "suplantacion_marca", None]
-                },
+                "motivo_cortocircuito": {"enum": ["lista_negra", "suplantacion_marca", None]},
                 "analisis_parcial": {"bsonType": "bool"},
                 "urls_extraidas": {"bsonType": "array", "maxItems": 2},
                 "recomendaciones": {
@@ -359,9 +357,7 @@ async def _sync_collection_validator(
                     "validationAction": "error",
                 }
             )
-            logger.info(
-                "Validador sincronizado con collMod", extra={"collection": col_name}
-            )
+            logger.info("Validador sincronizado con collMod", extra={"collection": col_name})
 
 
 def _key_items(keys: Any) -> list[tuple[str, Any]]:
@@ -383,15 +379,13 @@ async def _sync_collection_indexes(
 ) -> None:
     """Sincroniza índices: crea nuevos, actualiza TTL con collMod o falla si hay conflicto de opciones."""
     col = db[col_name]
-    existing_indexes: dict[str, Any] = await col.index_information()
+    existing_indexes: Mapping[str, Any] = await col.index_information()
 
     for model in models:
         model_name = model.document["name"]
         model_document = model.document
         model_keys = model_document["key"]
-        model_options = {
-            k: v for k, v in model_document.items() if k not in ("key", "name", "v")
-        }
+        model_options = {k: v for k, v in model_document.items() if k not in ("key", "name", "v")}
 
         # Buscar si ya existe un índice con las mismas claves
         matching_existing_name: str | None = None
@@ -466,9 +460,7 @@ async def _seed_data_if_needed(
         logger.info("Siembra omitida: ambas colecciones ya contienen datos")
         return
 
-    if (count_reglas == 0 and count_marcas > 0) or (
-        count_reglas > 0 and count_marcas == 0
-    ):
+    if (count_reglas == 0 and count_marcas > 0) or (count_reglas > 0 and count_marcas == 0):
         logger.warning(
             "Siembra no ejecutada: asimetría en colecciones de reglas y marcas (una vacía y otra no)",
             extra={"count_reglas": count_reglas, "count_marcas": count_marcas},
@@ -486,7 +478,7 @@ async def _seed_data_if_needed(
     try:
         raw_data = initial_data_path.read_text(encoding="utf-8")
         data = json.loads(raw_data)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "Error al leer initial_data.json, siembra omitida",
             extra={"error": str(exc)},
@@ -502,7 +494,7 @@ async def _seed_data_if_needed(
 
     if reglas:
         # fecha_actualizacion es ISODate en el modelo; el JSON no puede representarla.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reglas = [{**r, "fecha_actualizacion": r.get("fecha_actualizacion", now)} for r in reglas]
         await db["reglas_heuristicas"].insert_many(reglas)
     if marcas:
@@ -552,9 +544,7 @@ async def _run_cli() -> None:
 
     if not settings.MONGODB_MIGRATION_URL:
         raise SystemExit("Defina MONGODB_MIGRATION_URL (usuario antfish_migrator) para migrar.")
-    client: AsyncMongoClient[Mapping[str, Any]] = AsyncMongoClient(
-        settings.MONGODB_MIGRATION_URL
-    )
+    client: AsyncMongoClient[Mapping[str, Any]] = AsyncMongoClient(settings.MONGODB_MIGRATION_URL)
     try:
         await init_db(client[settings.DATABASE_NAME])
     finally:

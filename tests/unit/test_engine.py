@@ -8,7 +8,6 @@ from app.engine.models import (
     CircuitBreakerReason,
     Finding,
     RiskLevel,
-    UrlFeatures,
 )
 from app.engine.public_suffixes import (
     extract_subdomain,
@@ -128,4 +127,3 @@ def test_select_top_urls_ranking_and_tie_break() -> None:
     assert top_2[0].url == "https://bbva-alerta.acceso.xyz/login"
     # La segunda es la IP directa
     assert top_2[1].url == "https://192.168.1.1/admin"
-

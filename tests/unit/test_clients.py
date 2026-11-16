@@ -1,7 +1,7 @@
 """Pruebas unitarias para clientes de inteligencia de amenazas (RF-02.2)."""
 
-import pytest
 import httpx
+import pytest
 
 from app.clients.base import BaseReputationClient
 from app.clients.google_web_risk import GoogleWebRiskClient
@@ -13,6 +13,7 @@ from app.engine.models import SourceStatus
 @pytest.mark.asyncio
 async def test_base_client_timeout_handling() -> None:
     """Verifica que los timeouts se traduzcan al estado SourceStatus.TIMEOUT."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("Timeout simulado", request=request)
 
@@ -33,6 +34,7 @@ async def test_base_client_timeout_handling() -> None:
 @pytest.mark.asyncio
 async def test_base_client_rate_limit_handling() -> None:
     """Verifica que el error HTTP 429 se traduzca al estado SourceStatus.RATE_LIMIT."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, json={"error": "Rate limit exceeded"})
 
@@ -82,6 +84,7 @@ async def test_google_web_risk_threat_detected() -> None:
 @pytest.mark.asyncio
 async def test_google_web_risk_clean_url() -> None:
     """Verifica el procesamiento de URL limpia (sin amenazas) en Google Web Risk."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={})
 
@@ -101,6 +104,7 @@ async def test_google_web_risk_clean_url() -> None:
 @pytest.mark.asyncio
 async def test_virustotal_404_handled_as_clean() -> None:
     """Verifica que el status 404 en VirusTotal se procese como ok sin detecciones."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("x-apikey") == "fake_vt_key"
         return httpx.Response(404, json={"error": {"code": "NotFoundError"}})
@@ -183,7 +187,6 @@ async def test_phishtank_user_agent_and_detection() -> None:
         assert result.reputation.api == "phishtank"
 
 
-
 @pytest.mark.asyncio
 async def test_phishtank_non_json_degrades_to_error_and_logs_only_metadata(
     caplog: pytest.LogCaptureFixture,
@@ -201,7 +204,9 @@ async def test_phishtank_non_json_degrades_to_error_and_logs_only_metadata(
     app_logger.propagate = True
     try:
         with caplog.at_level(logging.WARNING, logger="antfish"):
-            client = PhishTankClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+            client = PhishTankClient(
+                client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            )
             result = await client.check_url("https://evil.example/login")
     finally:
         app_logger.propagate = False

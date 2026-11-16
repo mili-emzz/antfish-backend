@@ -16,7 +16,7 @@ python -m pytest tests/unit -q       # 111 pruebas, sin red
 # Integración (Docker): Redis -> REDIS_TEST_URL (def. redis://localhost:6379/15); Mongo -> MONGO_URI con usuario root
 python -m pytest tests/integration -q
 ```
-`ruff`, `mypy` y `lint-imports` **no están instalados** (AGENTS.md exige correrlos; instalar requiere aprobación del usuario). Dependencias fijadas en `requirements.txt` / `requirements-dev.txt` (reemplazan al antiguo `requeriments.txt`).
+`ruff check . && ruff format --check . && mypy app && lint-imports` **instalados y en verde** (2026-11-16; config en `pyproject.toml`, contratos de capas incluidos; se añadieron `__init__.py` a paquetes que eran namespace). Dependencias fijadas en `requirements.txt` / `requirements-dev.txt` (reemplazan al antiguo `requeriments.txt`).
 
 ## Estado de implementación
 | Área | Estado |
@@ -47,10 +47,10 @@ python -m pytest tests/integration -q
 `ENVIRONMENT`, `MONGODB_URL`, `MONGODB_MIGRATION_URL`, `DATABASE_NAME`, `REDIS_URL`, `HMAC_PEPPER`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `RESEND_API_KEY`, `GOOGLE_WEB_RISK_API_KEY`, `VIRUSTOTAL_API_KEY`, `PHISHTANK_API_KEY`, `PHISHTANK_ENABLED`, `MONGO_ROOT_USER/PASSWORD`, `MONGO_APP_USER/PASSWORD`, `MONGO_MIGRATOR_USER/PASSWORD`, `QUOTA_*`, `RATE_LIMIT_*`, `REPUTATION_CACHE_TTL_SECONDS`, `RULES_CACHE_TTL_SECONDS`, `RULES_RETRY_SECONDS`. Plantilla: `.env.example`. **No leer ni imprimir `.env`** (el clasificador de permisos lo bloquea y es sensible); para editarlo, hacerlo por script sin mostrar valores.
 
 ## Pendiente (orden sugerido)
-1. **Auth:** hechos `register`, `verify-email`, `resend-code`, `login`, `refresh`, `forgot`, `reset`, `DELETE /auth/me` (solo local; Google → 501) y `POST /auth/google` (código listo; `google-auth==2.62.2` ya instalado y fijado (2026-11-16; decodificación verificada con un certificado RSA local); y poner `GOOGLE_CLIENT_ID` en `.env`). Pendiente: rama `id_token` de `DELETE /auth/me` (RN-21; decidir si cuentas locales vinculadas usan password o id_token) y probar la validación real con un token de Google. `tests/integration/test_delete_account_mongo.py` está escrito pero **no se ha ejecutado** (necesita MONGO_URI root).
+1. **Auth:** hechos `register`, `verify-email`, `resend-code`, `login`, `refresh`, `forgot`, `reset`, `DELETE /auth/me` (solo local; Google → 501) y `POST /auth/google` (código listo; `google-auth==2.62.2` ya instalado y fijado (2026-11-16; decodificación verificada con un certificado RSA local); y poner `GOOGLE_CLIENT_ID` en `.env`). **Decidido (2026-11-16): cuentas locales con Google vinculado se reautentican con contraseña** (ya funciona, tienen `password_hash`); solo las cuentas únicamente-Google (sin password) seguirían en 501 hasta implementar `id_token` (RN-21). Pendiente: probar `/auth/google` con un token real (esperando `GOOGLE_CLIENT_ID` de frontend). `tests/integration/test_delete_account_mongo.py` **pasa** contra Mongo real (4 pruebas, con MONGO_URI root).
 2. ~~`GET /health` real~~ **Hecho** (`services/health_service.py`, `api/v1/health.py`; ADR #79 propuesto).
 3. **RNF-01:** las 2 URLs de un SMS se consultan en serie (~1.0-1.2 s por URL). **Decisión del usuario (2026-11-16): NO paralelizar** mientras el tiempo de respuesta no aumente demasiado; no reabrir sin medir.
-4. Instalar/correr ruff, mypy, import-linter (pedir aprobación).
+4. ~~Instalar/correr ruff, mypy, import-linter~~ **Hecho**; falta integrarlos en CI/pre-commit.
 5. **PhishTank:** decidir sustituirlo (URLhaus/OpenPhish), feed local o eliminarlo (cambia RF-02.2/RN-02, requiere ADR).
 6. Endurecimiento restante: migrar Motor→PyMongo async (Motor deprecado; AGENTS.md pide PyMongo async), logger JSON con escape, `except Exception` residuales (clientes), gitleaks en pre-commit/CI, Dockerfile y CI, Redis con contraseña/TLS, Mongo 3 nodos o Atlas con TLS, credenciales fuera del healthcheck, secretos en gestor, `docker-compose` para producción.
 7. Opcional: `scripts/seed_rules.py` (en `/scripts`, ignorado); limpiar historial git de `context/` y `.pyc` (`git filter-repo`, solo si se pide).

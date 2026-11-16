@@ -46,14 +46,14 @@ def async_test(coro: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @asynccontextmanager
-async def get_test_db() -> AsyncGenerator[AsyncDatabase[dict[str, Any]], None]:
+async def get_test_db() -> AsyncGenerator[AsyncDatabase[dict[str, Any]]]:
     client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(
         MONGO_URI,
         serverSelectionTimeoutMS=2000,
     )
     try:
         await client.admin.command("ping")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         pytest.fail(
             f"MongoDB no está disponible en {MONGO_URI}. Asegúrate de levantar el contenedor o servicio rs0: {exc}"
         )
@@ -116,8 +116,7 @@ async def test_indexes_structure_and_deferred() -> None:
         assert any(
             info.get("key") == [("google_sub", 1)]
             and info.get("unique") is True
-            and info.get("partialFilterExpression")
-            == {"google_sub": {"$type": "string"}}
+            and info.get("partialFilterExpression") == {"google_sub": {"$type": "string"}}
             for info in u_idx.values()
         )
 
@@ -125,8 +124,7 @@ async def test_indexes_structure_and_deferred() -> None:
         assert any(
             info.get("key") == [("fecha_registro", 1)]
             and info.get("expireAfterSeconds") == 172800
-            and info.get("partialFilterExpression")
-            == {"estado_cuenta": "pendiente_verificacion"}
+            and info.get("partialFilterExpression") == {"estado_cuenta": "pendiente_verificacion"}
             for info in u_idx.values()
         )
 
@@ -168,15 +166,13 @@ async def test_indexes_structure_and_deferred() -> None:
         # I8: respuestas_apis TTL expira_en
         r_idx = await test_db["respuestas_apis"].index_information()
         assert any(
-            info.get("key") == [("expira_en", 1)]
-            and info.get("expireAfterSeconds") == 0
+            info.get("key") == [("expira_en", 1)] and info.get("expireAfterSeconds") == 0
             for info in r_idx.values()
         )
 
         # I9: respuestas_apis (user_id: 1, analisis_id: 1)
         assert any(
-            info.get("key") == [("user_id", 1), ("analisis_id", 1)]
-            for info in r_idx.values()
+            info.get("key") == [("user_id", 1), ("analisis_id", 1)] for info in r_idx.values()
         )
 
 
@@ -223,10 +219,7 @@ async def test_query_plan_history_uses_ixscan_on_i2() -> None:
             for key in ("inputStage", "outerStage", "innerStage"):
                 if key in plan and find_stage(plan[key], target):
                     return True
-            for child in plan.get("inputStages", []):
-                if find_stage(child, target):
-                    return True
-            return False
+            return any(find_stage(child, target) for child in plan.get("inputStages", []))
 
         winning_plan = explanation.get("queryPlanner", {}).get("winningPlan", {})
         assert find_stage(winning_plan, "IXSCAN")

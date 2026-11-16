@@ -7,8 +7,8 @@ fallos de red, configuración y la lógica de alta/vinculación.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock
 
 import httpx
@@ -121,7 +121,8 @@ async def test_client_rejects_missing_sub_or_email(missing: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("raw", "expected"), [(True, True), ("true", True), (False, False), ("false", False), (None, False)]
+    ("raw", "expected"),
+    [(True, True), ("true", True), (False, False), ("false", False), (None, False)],
 )
 async def test_client_email_verified_parsing(raw: Any, expected: bool) -> None:
     client, _, _ = _client(_claims(email_verified=raw))
@@ -205,27 +206,39 @@ class FakeUserRepo:
         u = self.users[user_id]
         if u["estado_cuenta"] != "pendiente_verificacion":
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         u.update(
-            proveedor_auth="google", google_sub=sub, password_hash=None, estado_cuenta="activa",
-            email_verificado=True, fecha_verificacion=now, password_changed_at=now,
+            proveedor_auth="google",
+            google_sub=sub,
+            password_hash=None,
+            estado_cuenta="activa",
+            email_verificado=True,
+            fecha_verificacion=now,
+            password_changed_at=now,
         )
         return True
 
 
 def _local(estado: str = "activa", **extra: Any) -> dict[str, Any]:
     doc: dict[str, Any] = {
-        "_id": ObjectId(), "email": "ana@correo.com", "nombre": "Ana",
-        "proveedor_auth": "local", "google_sub": None,
+        "_id": ObjectId(),
+        "email": "ana@correo.com",
+        "nombre": "Ana",
+        "proveedor_auth": "local",
+        "google_sub": None,
         "password_hash": hash_password("PasswordSeguro123!"),
-        "estado_cuenta": estado, "email_verificado": estado == "activa", "password_changed_at": None,
+        "estado_cuenta": estado,
+        "email_verificado": estado == "activa",
+        "password_changed_at": None,
     }
     doc.update(extra)
     return doc
 
 
 class Env:
-    def __init__(self, *users: dict[str, Any], identity: GoogleIdentity | Exception | None = None) -> None:
+    def __init__(
+        self, *users: dict[str, Any], identity: GoogleIdentity | Exception | None = None
+    ) -> None:
         self.repo = FakeUserRepo(*users)
         self.google = AsyncMock()
         if isinstance(identity, Exception):
@@ -237,7 +250,7 @@ class Env:
         self.service = AuthService(self.repo, AsyncMock(), google_client=self.google)  # type: ignore[arg-type]
 
         class _Repo:
-            counts: dict[str, int] = {}
+            counts: ClassVar[dict[str, int]] = {}
 
             async def hit(self, key: str, window: int) -> tuple[int, int]:
                 self.counts[key] = self.counts.get(key, 0) + 1
@@ -281,7 +294,9 @@ async def test_new_user_without_name_uses_email_local_part() -> None:
 
 @pytest.mark.asyncio
 async def test_existing_google_user_logs_in_by_sub_even_if_email_changed() -> None:
-    u = _local(proveedor_auth="google", google_sub=SUB, password_hash=None, email="viejo@correo.com")
+    u = _local(
+        proveedor_auth="google", google_sub=SUB, password_hash=None, email="viejo@correo.com"
+    )
     e = Env(u)
     assert (await e.login()).status_code == 200
     assert len(e.repo.users) == 1

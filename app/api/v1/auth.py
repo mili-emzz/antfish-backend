@@ -22,11 +22,11 @@ from app.api.schemas.auth import (
 )
 from app.core.exceptions import (
     AccountConflictError,
-    GoogleTokenInvalidError,
-    IdentityProviderUnavailableError,
     AccountNotVerifiedError,
     DuplicateEmailError,
     EmailDeliveryError,
+    GoogleTokenInvalidError,
+    IdentityProviderUnavailableError,
     ReauthMethodUnavailableError,
     UnauthorizedError,
 )
@@ -35,7 +35,9 @@ from app.services.auth_service import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 _RESEND_MESSAGE = "Si la cuenta está pendiente de verificación, se envió un nuevo código."
-_FORGOT_MESSAGE = "Si el correo corresponde a una cuenta activa, recibirás un código de recuperación."
+_FORGOT_MESSAGE = (
+    "Si el correo corresponde a una cuenta activa, recibirás un código de recuperación."
+)
 
 
 def get_auth_service(request: Request) -> AuthService:
@@ -107,15 +109,11 @@ async def verify_email(
 ):
     """Endpoint POST /api/v1/auth/verify-email para verificar el código de 6 dígitos."""
     try:
-        result = await auth_service.verify_email(
-            email=payload.email, codigo=payload.codigo
-        )
+        result = await auth_service.verify_email(email=payload.email, codigo=payload.codigo)
         return result
     except ValueError as exc:
         # Devuelve 400 uniformemente si algo falla, previniendo enumeración
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post(
@@ -305,9 +303,7 @@ async def delete_me(
         await auth_service.delete_account(user, payload.password)
     except UnauthorizedError as exc:
         # 403 y no 401: un 401 haría que la app intente renovar la sesión en vez de pedir la contraseña.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=exc.message
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
     except ReauthMethodUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=exc.message

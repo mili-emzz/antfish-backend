@@ -33,7 +33,7 @@ async def dbs():
     pym = AsyncMongoClient(MONGO_URI, serverSelectionTimeoutMS=4000)
     try:
         await pym.admin.command("ping")
-    except Exception as exc:  # noqa: BLE001 - se omite si no hay Mongo
+    except Exception as exc:
         await pym.close()
         pytest.skip(f"MongoDB no disponible: {type(exc).__name__}")
     motor = AsyncIOMotorClient(MONGO_URI)
@@ -76,8 +76,10 @@ async def test_catalog_changes_in_mongo_change_the_analysis(dbs) -> None:
 
     def service() -> AnalysisService:
         return AnalysisService(
-            web_risk_client=_api("google_web_risk"), virustotal_client=_api("virustotal"),
-            phishtank_client=None, rules_provider=RulesProvider(RulesRepository(motor_db)),
+            web_risk_client=_api("google_web_risk"),
+            virustotal_client=_api("virustotal"),
+            phishtank_client=None,
+            rules_provider=RulesProvider(RulesRepository(motor_db)),
         )
 
     # Marca nueva sembrada INACTIVA: no se detecta hasta que se revise y active

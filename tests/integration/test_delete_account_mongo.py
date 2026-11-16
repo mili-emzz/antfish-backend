@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -39,7 +39,7 @@ async def dbs():
     pym = AsyncMongoClient(MONGO_URI, serverSelectionTimeoutMS=4000)
     try:
         await pym.admin.command("ping")
-    except Exception as exc:  # noqa: BLE001 - se omite si no hay Mongo
+    except Exception as exc:
         await pym.close()
         pytest.skip(f"MongoDB no disponible: {type(exc).__name__}")
     motor = AsyncIOMotorClient(MONGO_URI)
@@ -61,7 +61,7 @@ def _service(db) -> AuthService:
 
 
 async def _seed_user(db, email: str) -> dict:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     doc = {
         "email": email,
         "proveedor_auth": "local",
@@ -80,7 +80,7 @@ async def _seed_user(db, email: str) -> dict:
 
 
 async def _seed_data(db, user_id: ObjectId) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     analysis_id = (
         await db["analisis"].insert_one(
             {
@@ -93,7 +93,7 @@ async def _seed_data(db, user_id: ObjectId) -> None:
                 "puntos_por_capa": {"apis": 0, "url": 10, "texto": 0},
                 "analisis_parcial": False,
                 "hallazgos": [],
-                "recomendaciones": [],
+                "recomendaciones": ["No abras enlaces desconocidos"],
                 "fuentes_consultadas": [],
                 "fecha": now,
             }

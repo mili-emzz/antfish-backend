@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -77,7 +77,7 @@ def _service(
 
 
 def test_cursor_roundtrip_and_invalid() -> None:
-    fecha = datetime(2026, 11, 1, 10, 30, tzinfo=timezone.utc)
+    fecha = datetime(2026, 11, 1, 10, 30, tzinfo=UTC)
     oid = ObjectId()
     assert decode_cursor(encode_cursor(fecha, oid)) == (fecha, oid)
     with pytest.raises(InvalidCursorError):
@@ -151,7 +151,7 @@ async def test_metrics_service_defaults_and_values() -> None:
     data = await MetricsService(repo).get_user_metrics(str(USER_ID))
     assert data["total_escaneos"] == 0 and data["ultima_actualizacion"] is None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     repo.find_by_user = AsyncMock(
         return_value={
             "total_escaneos": 3,
@@ -211,9 +211,12 @@ def test_endpoints_require_authentication() -> None:
     client = TestClient(app)
     assert client.get("/api/v1/analysis").status_code == 401
     assert client.get("/api/v1/metrics/me").status_code == 401
-    assert client.post(
-        "/api/v1/analysis", json={"tipo_entrada": "url", "contenido": "https://a.com"}
-    ).status_code == 401
+    assert (
+        client.post(
+            "/api/v1/analysis", json={"tipo_entrada": "url", "contenido": "https://a.com"}
+        ).status_code
+        == 401
+    )
 
 
 @pytest.mark.asyncio

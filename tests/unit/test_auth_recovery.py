@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -43,7 +43,7 @@ class FakeUserRepo:
         if user["estado_cuenta"] != "activa":
             return False
         user["password_hash"] = password_hash
-        user["password_changed_at"] = datetime.now(timezone.utc)
+        user["password_changed_at"] = datetime.now(UTC)
         return True
 
     async def mark_as_verified(self, user_id: str) -> bool:
@@ -159,7 +159,9 @@ async def test_resend_code_uniform_for_unknown_and_active(env: Env) -> None:
 async def test_resend_code_fourth_request_in_hour_is_429() -> None:
     e = Env(_user("pendiente_verificacion"))
     for _ in range(3):
-        assert (await e.client.post("/api/v1/auth/resend-code", json={"email": "ana@correo.com"})).status_code == 200
+        assert (
+            await e.client.post("/api/v1/auth/resend-code", json={"email": "ana@correo.com"})
+        ).status_code == 200
     # 4.º dentro de la hora; el límite por IP (5/min) aún no se agota
     r = await e.client.post("/api/v1/auth/resend-code", json={"email": "ana@correo.com"})
     assert r.status_code == 429
@@ -189,7 +191,12 @@ async def test_forgot_is_uniform_and_only_sends_for_active_local(env: Env) -> No
 
 @pytest.mark.parametrize(
     "user",
-    [_user("pendiente_verificacion"), _user("eliminada"), _user("suspendida"), _user(password_hash=None)],
+    [
+        _user("pendiente_verificacion"),
+        _user("eliminada"),
+        _user("suspendida"),
+        _user(password_hash=None),
+    ],
 )
 @pytest.mark.asyncio
 async def test_forgot_skips_non_eligible_accounts(user: dict[str, Any]) -> None:
@@ -248,7 +255,7 @@ async def test_reset_success_updates_hash_and_revokes_tokens(env: Env) -> None:
     assert again.status_code == 400
 
     # un refresh emitido antes del reset queda revocado (D18)
-    user["password_changed_at"] = datetime.now(timezone.utc) + timedelta(seconds=5)
+    user["password_changed_at"] = datetime.now(UTC) + timedelta(seconds=5)
     refreshed = await env.client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
     assert refreshed.status_code == 401
 
@@ -277,7 +284,9 @@ async def test_reset_locks_after_5_attempts_even_with_right_code(env: Env) -> No
             json={"email": "ana@correo.com", "codigo": wrong, "nueva_password": "OtraClave456!"},
         )
         assert r.status_code == 400
-    env.rate_repo.counts = {k: v for k, v in env.rate_repo.counts.items() if not k.startswith("rl:auth:")}
+    env.rate_repo.counts = {
+        k: v for k, v in env.rate_repo.counts.items() if not k.startswith("rl:auth:")
+    }
     r = await env.client.post(
         "/api/v1/auth/password/reset",
         json={"email": "ana@correo.com", "codigo": code, "nueva_password": "OtraClave456!"},
@@ -337,6 +346,10 @@ async def test_refresh_rejects_access_token_garbage_and_inactive(env: Env) -> No
         assert r.status_code == 401
 
     ghost = create_refresh_token({"sub": str(ObjectId()), "email": "x@x.com"})
-    assert (await env.client.post("/api/v1/auth/refresh", json={"refresh_token": ghost})).status_code == 401
+    assert (
+        await env.client.post("/api/v1/auth/refresh", json={"refresh_token": ghost})
+    ).status_code == 401
     bad_id = create_refresh_token({"sub": "no-es-objectid", "email": "x@x.com"})
-    assert (await env.client.post("/api/v1/auth/refresh", json={"refresh_token": bad_id})).status_code == 401
+    assert (
+        await env.client.post("/api/v1/auth/refresh", json={"refresh_token": bad_id})
+    ).status_code == 401

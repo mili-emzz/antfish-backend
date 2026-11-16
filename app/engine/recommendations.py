@@ -24,26 +24,41 @@ def generate_recommendations(
             recs.append("No compartas contraseñas, PIN, NIP ni información bancaria confidencial.")
         else:
             recs.append("No descargues archivos ni autorices ningún permiso en el sitio.")
-        recs.append("Si dudas de la autenticidad, contacta a la institución exclusivamente por sus canales oficiales.")
+        recs.append(
+            "Si dudas de la autenticidad, contacta a la institución exclusivamente por sus canales oficiales."
+        )
 
     elif risk_level == RiskLevel.ALTO:
-        recs.append("Evita ingresar al enlace; presenta múltiples indicadores de riesgo o suplantación.")
+        recs.append(
+            "Evita ingresar al enlace; presenta múltiples indicadores de riesgo o suplantación."
+        )
         if "TXT_LENGUAJE_URGENCIA" in finding_codes:
-            recs.append("Los atacantes suelen usar urgencia falsa para apresurar decisiones; tómate un momento para verificar.")
+            recs.append(
+                "Los atacantes suelen usar urgencia falsa para apresurar decisiones; tómate un momento para verificar."
+            )
         else:
-            recs.append("Verifica la autenticidad del remitente a través de su aplicación oficial o teléfono oficial.")
+            recs.append(
+                "Verifica la autenticidad del remitente a través de su aplicación oficial o teléfono oficial."
+            )
         recs.append("Nunca proporciones códigos de verificación recibidos por SMS o aplicaciones.")
 
     elif risk_level == RiskLevel.MEDIO:
-        recs.append("Procede con precaución: el mensaje contiene patrones sospechosos o enlaces acortados.")
-        recs.append("Revisa minuciosamente la barra de direcciones del navegador antes de interactuar.")
+        recs.append(
+            "Procede con precaución: el mensaje contiene patrones sospechosos o enlaces acortados."
+        )
+        recs.append(
+            "Revisa minuciosamente la barra de direcciones del navegador antes de interactuar."
+        )
         if "URL_ACORTADOR" in finding_codes:
-            recs.append("El enlace está acortado y oculta su destino real; no abras la página si no esperabas este mensaje.")
+            recs.append(
+                "El enlace está acortado y oculta su destino real; no abras la página si no esperabas este mensaje."
+            )
 
     else:  # BAJO
         recs.append("No se detectaron indicadores evidentes de fraude en el enlace o mensaje.")
-        recs.append("Mantén siempre precaución ante solicitudes no solicitadas de información personal.")
+        recs.append(
+            "Mantén siempre precaución ante solicitudes no solicitadas de información personal."
+        )
 
     # Retornar como máximo 3 recomendaciones
     return recs[:3]
-

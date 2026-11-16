@@ -134,4 +134,3 @@ class ScoreResult:
     recomendaciones: list[str] = field(default_factory=list)
     fuentes_consultadas: list[Reputation] = field(default_factory=list)
     urls_extraidas: list[ExtractedUrl] = field(default_factory=list)
-

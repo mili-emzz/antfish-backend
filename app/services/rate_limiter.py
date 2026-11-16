@@ -58,4 +58,6 @@ class RateLimiter:
                 f"rl:analysis:{user_id}", settings.RATE_LIMIT_ANALYSIS_PER_MIN, WINDOW_MINUTE
             )
         except RedisError as exc:
-            logger.warning(f"Rate limit de análisis no disponible (fail-open): {type(exc).__name__}")
+            logger.warning(
+                f"Rate limit de análisis no disponible (fail-open): {type(exc).__name__}"
+            )

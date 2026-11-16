@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from bson import ObjectId
@@ -19,8 +19,8 @@ HISTORY_PAGE_SIZE = 20
 def encode_cursor(fecha: datetime, doc_id: ObjectId) -> str:
     """Codifica el cursor opaco (fecha, _id) en base64url."""
     if fecha.tzinfo is None:
-        fecha = fecha.replace(tzinfo=timezone.utc)
-    raw = f"{fecha.astimezone(timezone.utc).isoformat()}|{doc_id}"
+        fecha = fecha.replace(tzinfo=UTC)
+    raw = f"{fecha.astimezone(UTC).isoformat()}|{doc_id}"
     return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
 
@@ -49,7 +49,7 @@ class AnalysisRepository:
     ) -> ObjectId:
         """Inserta un análisis (P6) y devuelve su _id."""
         result = await self._analisis.insert_one(document, session=session)
-        return result.inserted_id  # type: ignore[no-any-return]
+        return result.inserted_id
 
     async def insert_api_responses(
         self,

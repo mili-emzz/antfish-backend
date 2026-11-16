@@ -112,7 +112,6 @@ class GoogleTokenInvalidError(AntFishError):
         super().__init__(message)
 
 
-
 class AnalysisNotFoundError(AntFishError):
     """Análisis inexistente o que no pertenece al usuario autenticado (HTTP 404)."""
 

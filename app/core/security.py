@@ -1,14 +1,15 @@
 """Módulo de seguridad criptográfica: Argon2id, JWT y HMAC (RF-06.8, RNF-03)."""
 
-from datetime import datetime, timedelta, timezone
-import hashlib
 import functools
+import hashlib
 import hmac
 import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-import jwt
 
 from app.core.config import settings
 
@@ -30,7 +31,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica si una contraseña plana coincide con el hash Argon2id."""
     try:
         return _password_hasher.verify(hashed_password, plain_password)
-    except (VerificationError, InvalidHashError):
+    except VerificationError, InvalidHashError:
         return False
 
 
@@ -51,17 +52,19 @@ def create_access_token(
 ) -> str:
     """Genera un Access Token JWT con vigencia de 30 minutos por defecto."""
     to_encode = data.copy()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if expires_delta:
         expire = now + expires_delta
     else:
         expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    to_encode.update({
-        "exp": expire,
-        "iat": now,
-        "type": "access",
-    })
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": now,
+            "type": "access",
+        }
+    )
     return jwt.encode(
         to_encode,
         settings.JWT_SECRET,
@@ -75,17 +78,19 @@ def create_refresh_token(
 ) -> str:
     """Genera un Refresh Token JWT con vigencia de 30 días firmado con JWT_REFRESH_SECRET."""
     to_encode = data.copy()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if expires_delta:
         expire = now + expires_delta
     else:
         expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
-    to_encode.update({
-        "exp": expire,
-        "iat": now,
-        "type": "refresh",
-    })
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": now,
+            "type": "refresh",
+        }
+    )
     return jwt.encode(
         to_encode,
         settings.JWT_REFRESH_SECRET,

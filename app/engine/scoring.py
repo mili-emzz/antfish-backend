@@ -24,13 +24,8 @@ from app.engine.models import (
     CircuitBreakerReason,
     Finding,
     Reputation,
-    RiskLevel,
-    ScoreResult,
     SourceStatus,
-    UrlFeatures,
 )
-from app.engine.recommendations import generate_recommendations
-from app.engine.risk_levels import get_risk_level
 
 
 def evaluate_api_reputations(reputations: Sequence[Reputation]) -> tuple[int, list[Finding], bool]:
@@ -124,4 +119,3 @@ def consolidate_score(
 
     final_score = max(0, min(100, score))
     return final_score, motivo
-

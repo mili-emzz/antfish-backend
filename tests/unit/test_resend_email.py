@@ -1,6 +1,7 @@
 """Pruebas unitarias para ResendEmailClient y VerificationService (RF-06.2, RNF-06)."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 
@@ -141,4 +142,3 @@ async def test_verification_service_propagates_email_delivery_error():
             user_id="user_abc123",
             email="test@correo.com",
         )
-

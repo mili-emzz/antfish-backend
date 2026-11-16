@@ -6,7 +6,7 @@ import secrets
 
 from app.clients.resend_email import ResendEmailClient
 from app.core.config import settings
-from app.core.exceptions import EmailDeliveryError, VerificationAttemptsExceededError
+from app.core.exceptions import VerificationAttemptsExceededError
 from app.repositories.redis.verification_repository import VerificationRepository
 from app.services.rate_limiter import RateLimiter
 

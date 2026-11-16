@@ -7,6 +7,7 @@ con cabecera obligatoria User-Agent AntFish/1.0 y timeout estricto de 1.5 s.
 from __future__ import annotations
 
 from typing import Any
+
 import httpx
 
 from app.clients.base import BaseReputationClient, ReputationResult
@@ -64,9 +65,7 @@ class PhishTankClient(BaseReputationClient):
         )
 
         if estado != SourceStatus.OK or response is None:
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(estado)
-            )
+            return ReputationResult(reputation=self._build_fallback_reputation(estado))
 
         # Diagnóstico: solo metadatos de la respuesta; nunca el cuerpo ni la URL.
         content_type = response.headers.get("content-type", "desconocido").split(";")[0]
@@ -79,9 +78,7 @@ class PhishTankClient(BaseReputationClient):
                 f"status={response.status_code} content_type={content_type} "
                 f"bytes={len(response.content)} server={server}"
             )
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))
 
         if response.status_code != 200 or not isinstance(data, dict):
             logger.warning(
@@ -116,11 +113,6 @@ class PhishTankClient(BaseReputationClient):
                 ),
                 raw_response=data,
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                f"Error al deserializar respuesta de PhishTank: {type(exc).__name__}"
-            )
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
-
+        except Exception as exc:
+            logger.error(f"Error al deserializar respuesta de PhishTank: {type(exc).__name__}")
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))

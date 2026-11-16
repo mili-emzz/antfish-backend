@@ -70,13 +70,9 @@ async def list_history(
 ) -> HistoryPageResponse:
     """Devuelve una página del historial del usuario autenticado."""
     try:
-        items, next_cursor = await analysis_service.list_history(
-            str(user["_id"]), cursor
-        )
+        items, next_cursor = await analysis_service.list_history(str(user["_id"]), cursor)
     except InvalidCursorError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     return HistoryPageResponse(
         items=[AnalysisResponse(**i) for i in items], next_cursor=next_cursor
     )
@@ -96,9 +92,7 @@ async def get_analysis(
     try:
         result = await analysis_service.get_detail(str(user["_id"]), analysis_id)
     except AnalysisNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=exc.message
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
     return AnalysisResponse(**result)
 
 
@@ -117,8 +111,5 @@ async def delete_analysis(
     try:
         await analysis_service.delete_analysis(str(user["_id"]), analysis_id)
     except AnalysisNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=exc.message
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

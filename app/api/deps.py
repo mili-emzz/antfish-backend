@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import timezone
 from collections.abc import Awaitable, Callable
+from datetime import UTC
 from typing import Any
 
 import jwt
@@ -60,15 +60,13 @@ async def get_current_user(
     password_changed_at = user.get("password_changed_at")
     if password_changed_at is not None:
         if password_changed_at.tzinfo is None:
-            password_changed_at = password_changed_at.replace(tzinfo=timezone.utc)
+            password_changed_at = password_changed_at.replace(tzinfo=UTC)
         if int(payload.get("iat", 0)) < int(password_changed_at.timestamp()):
             raise _unauthorized()
 
     estado = user.get("estado_cuenta")
     if estado == "pendiente_verificacion":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="ACCOUNT_NOT_VERIFIED"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ACCOUNT_NOT_VERIFIED")
     if estado != "activa":
         raise _unauthorized()
     return user

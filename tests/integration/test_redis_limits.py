@@ -24,7 +24,7 @@ async def client():
     r = redis.from_url(REDIS_URL)
     try:
         await r.ping()
-    except Exception as exc:  # noqa: BLE001 - se omite la prueba si no hay Redis
+    except Exception as exc:
         pytest.skip(f"Redis no disponible: {type(exc).__name__}")
     yield r
     await r.aclose()

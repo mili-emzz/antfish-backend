@@ -26,21 +26,46 @@ from app.engine.rule_catalog import disabled_rule_codes
 _URGENCY_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:urgente|urgencia|inmediato|inmediata|de inmediato)\b", re.IGNORECASE),
     re.compile(r"\b(?:bloquead[oas]|bloqueo|bloqueara|bloquearan)\b", re.IGNORECASE),
-    re.compile(r"\b(?:suspensi[oó]n|suspendid[oas]|suspender[aá]|evita la suspensi[oó]n)\b", re.IGNORECASE),
-    re.compile(r"\b(?:cancelaci[oó]n|cancelad[oas]|desactivaci[oó]n|desactivad[oas])\b", re.IGNORECASE),
-    re.compile(r"\b(?:vence hoy|plazo vencido|tiempo l[ií]mite|expirad[oas]|expira)\b", re.IGNORECASE),
-    re.compile(r"\b(?:alerta de seguridad|aviso importante|aviso urgente|accion requerida|act[uú]a ya)\b", re.IGNORECASE),
-    re.compile(r"\b(?:ultim[oa] aviso|en menos de \d+\s*(?:horas?|hrs?|minutos?))\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:suspensi[oó]n|suspendid[oas]|suspender[aá]|evita la suspensi[oó]n)\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:cancelaci[oó]n|cancelad[oas]|desactivaci[oó]n|desactivad[oas])\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:vence hoy|plazo vencido|tiempo l[ií]mite|expirad[oas]|expira)\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:alerta de seguridad|aviso importante|aviso urgente|accion requerida|act[uú]a ya)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:ultim[oa] aviso|en menos de \d+\s*(?:horas?|hrs?|minutos?))\b", re.IGNORECASE
+    ),
 )
 
 # Patrones para TXT_SOLICITUD_DATOS (+10 pts)
 _DATA_REQUEST_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\b(?:verific[aá]|confirm[aá]|valid[aá]|actualiz[aá]|ingres[aá])\s+(?:tu|tus|su|sus)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:verific[aá]|confirm[aá]|valid[aá]|actualiz[aá]|ingres[aá])\s+(?:tu|tus|su|sus)\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:inici[aá]\s+sesi[oó]n|acced[eé]\s+a\s+tu\s+cuenta)\b", re.IGNORECASE),
-    re.compile(r"\b(?:cancel[aá]\s+(?:el\s+)?cargo|cargo\s+no\s+reconocido|cargo\s+de\s+\$?\d+)\b", re.IGNORECASE),
-    re.compile(r"\b(?:transferencia\s+retenida|dep[oó]sito\s+retenido|pago\s+rechazado)\b", re.IGNORECASE),
-    re.compile(r"\b(?:c[oó]digo\s+de\s+seguridad|c[oó]digo\s+de\s+verificaci[oó]n|token|nip|pin|cvv)\b", re.IGNORECASE),
-    re.compile(r"\b(?:banca\s+m[oó]vil|banca\s+por\s+internet|datos\s+bancarios|tarjeta\s+de\s+(?:cr[eé]dito|d[eé]bito))\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:cancel[aá]\s+(?:el\s+)?cargo|cargo\s+no\s+reconocido|cargo\s+de\s+\$?\d+)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:transferencia\s+retenida|dep[oó]sito\s+retenido|pago\s+rechazado)\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:c[oó]digo\s+de\s+seguridad|c[oó]digo\s+de\s+verificaci[oó]n|token|nip|pin|cvv)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:banca\s+m[oó]vil|banca\s+por\s+internet|datos\s+bancarios|tarjeta\s+de\s+(?:cr[eé]dito|d[eé]bito))\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:contrase[nñ]a|clave\s+de\s+acceso|credenciales?)\b", re.IGNORECASE),
 )
 
@@ -152,4 +177,3 @@ def analyze_text(
         )
 
     return findings
-

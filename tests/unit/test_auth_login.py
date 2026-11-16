@@ -1,10 +1,11 @@
 """Pruebas unitarias para el flujo de Login de Usuario (RF-06.8, D12)."""
 
 from unittest.mock import AsyncMock
-from bson import ObjectId
-from fastapi import FastAPI, status
+
 import httpx
 import pytest
+from bson import ObjectId
+from fastapi import FastAPI, status
 
 from app.api.v1 import auth
 from app.core.exceptions import AccountNotVerifiedError, UnauthorizedError
@@ -34,11 +35,14 @@ def auth_service(mock_user_repo, mock_verification_service):
 def test_app(auth_service):
     app = FastAPI()
     app.include_router(auth.router, prefix="/api/v1")
+
     # Inyectar container simulado con auth_service en app.state
     class DummyContainer:
         def __init__(self, service):
             self.auth_service = service
-            self.rate_limiter = AsyncMock()  # permisivo; el límite se prueba en test_rate_limit_quota
+            self.rate_limiter = (
+                AsyncMock()
+            )  # permisivo; el límite se prueba en test_rate_limit_quota
 
     app.state.container = DummyContainer(auth_service)
     return app

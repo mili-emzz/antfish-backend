@@ -24,7 +24,7 @@ async def test_real_redis_up_then_unreachable_redis_is_degraded() -> None:
     live = redis.from_url(REDIS_URL)
     try:
         await live.ping()
-    except Exception as exc:  # noqa: BLE001 - se omite si no hay Redis
+    except Exception as exc:
         await live.aclose()
         pytest.skip(f"Redis no disponible: {type(exc).__name__}")
     try:

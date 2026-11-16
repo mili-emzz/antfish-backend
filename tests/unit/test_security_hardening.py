@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import jwt
@@ -66,7 +66,7 @@ def test_valid_settings_and_default_environment() -> None:
 def test_decode_requires_exp_iat_sub() -> None:
     from app.core.config import settings
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     no_sub = jwt.encode(
         {"exp": now + timedelta(minutes=5), "iat": now},
         settings.JWT_SECRET,

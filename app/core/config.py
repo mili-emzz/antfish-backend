@@ -66,13 +66,11 @@ class Settings(BaseSettings):
             "phishtank": (self.QUOTA_PHISHTANK_PM, self.QUOTA_PHISHTANK_DAILY),
         }
 
-    model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", hide_input_in_errors=True
-    )
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     @field_validator("HMAC_PEPPER", "JWT_SECRET", "JWT_REFRESH_SECRET")
     @classmethod
-    def _validate_secret_strength(cls, value: str, info) -> str:  # type: ignore[no-untyped-def]
+    def _validate_secret_strength(cls, value: str, info) -> str:
         """Rechaza secretos cortos o que parezcan placeholders (sin mostrar su valor)."""
         if len(value) < MIN_SECRET_LENGTH:
             raise ValueError(
@@ -83,7 +81,7 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _validate_distinct_jwt_secrets(self) -> "Settings":
+    def _validate_distinct_jwt_secrets(self) -> Settings:
         if self.JWT_SECRET == self.JWT_REFRESH_SECRET:
             raise ValueError("JWT_SECRET y JWT_REFRESH_SECRET deben ser distintos")
         return self

@@ -27,16 +27,32 @@ class Clock:
 
 
 def brand_doc(codigo: str = "acme", **kw: Any) -> dict[str, Any]:
-    doc = {"_id": 1, "codigo": codigo, "nombre": "Acme", "categoria": "banca",
-           "dominios_oficiales": ["ACME.com "], "variantes_ofuscadas": ["4cme"], "activa": True}
+    doc = {
+        "_id": 1,
+        "codigo": codigo,
+        "nombre": "Acme",
+        "categoria": "banca",
+        "dominios_oficiales": ["ACME.com "],
+        "variantes_ofuscadas": ["4cme"],
+        "activa": True,
+    }
     doc.update(kw)
     return doc
 
 
 def rule_doc(codigo: str = "URL_TLD_ALTO_RIESGO", **kw: Any) -> dict[str, Any]:
-    doc = {"_id": 2, "codigo": codigo, "capa": RULE_CATALOG[codigo][0], "titulo": "t",
-           "descripcion": "d", "puntos": RULE_CATALOG[codigo][1], "tipo_patron": "p",
-           "parametros": {"marcas_codigos": [], "valores": ["xyz"]}, "activa": True, "version": 1}
+    doc = {
+        "_id": 2,
+        "codigo": codigo,
+        "capa": RULE_CATALOG[codigo][0],
+        "titulo": "t",
+        "descripcion": "d",
+        "puntos": RULE_CATALOG[codigo][1],
+        "tipo_patron": "p",
+        "parametros": {"marcas_codigos": [], "valores": ["xyz"]},
+        "activa": True,
+        "version": 1,
+    }
     doc.update(kw)
     return doc
 
@@ -76,7 +92,9 @@ async def test_concurrent_requests_trigger_a_single_load() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mongo_failure_without_previous_catalog_uses_internal_defaults_and_retries_soon() -> None:
+async def test_mongo_failure_without_previous_catalog_uses_internal_defaults_and_retries_soon() -> (
+    None
+):
     clock = Clock()
     r = MagicMock()
     r.find_rules = AsyncMock(side_effect=ServerSelectionTimeoutError("caído"))
@@ -84,7 +102,9 @@ async def test_mongo_failure_without_previous_catalog_uses_internal_defaults_and
     provider = RulesProvider(r, ttl_seconds=3600, retry_seconds=30, clock=clock)
 
     snap = await provider.get()
-    assert snap.source == "defaults" and snap.brands == DEFAULT_PROTECTED_BRANDS and snap.rules == ()
+    assert (
+        snap.source == "defaults" and snap.brands == DEFAULT_PROTECTED_BRANDS and snap.rules == ()
+    )
     await provider.get()
     assert r.find_rules.await_count == 1  # no martilla a Mongo en cada análisis
 
@@ -106,30 +126,41 @@ async def test_mongo_failure_keeps_last_valid_catalog() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("brands", [[], [{"codigo": 7}], [brand_doc(dominios_oficiales="no-lista")]])
-async def test_empty_or_invalid_brand_catalog_falls_back_to_defaults(brands: list[dict[str, Any]]) -> None:
+@pytest.mark.parametrize(
+    "brands", [[], [{"codigo": 7}], [brand_doc(dominios_oficiales="no-lista")]]
+)
+async def test_empty_or_invalid_brand_catalog_falls_back_to_defaults(
+    brands: list[dict[str, Any]],
+) -> None:
     provider = RulesProvider(repo([rule_doc()], brands), clock=Clock())
     snap = await provider.get()
     assert snap.source == "defaults" and snap.brands == DEFAULT_PROTECTED_BRANDS
 
 
 def test_invalid_documents_are_discarded_individually() -> None:
-    brands, skipped = parse_brands([brand_doc("a"), brand_doc("b", activa="si"), {"codigo": ""}, brand_doc("c")])
+    brands, skipped = parse_brands(
+        [brand_doc("a"), brand_doc("b", activa="si"), {"codigo": ""}, brand_doc("c")]
+    )
     assert [b.codigo for b in brands] == ["a", "c"] and skipped == 2
 
     inventada = {**rule_doc(), "codigo": "REGLA_INVENTADA"}
-    rules, skipped_r, _ = parse_rules([rule_doc(), inventada,
-                                       rule_doc("URL_ACORTADOR", parametros="x")])
+    rules, skipped_r, _ = parse_rules(
+        [rule_doc(), inventada, rule_doc("URL_ACORTADOR", parametros="x")]
+    )
     assert [r.codigo for r in rules] == ["URL_TLD_ALTO_RIESGO"] and skipped_r == 2
 
 
-def test_points_from_mongo_are_replaced_by_canonical_values(caplog: pytest.LogCaptureFixture) -> None:
+def test_points_from_mongo_are_replaced_by_canonical_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     from app.core.logging import logger as app_logger
 
     app_logger.propagate = True
     try:
         with caplog.at_level(logging.WARNING, logger="antfish"):
-            rules, _, mismatched = parse_rules([rule_doc(puntos=1), rule_doc("URL_ACORTADOR", puntos=500)])
+            rules, _, mismatched = parse_rules(
+                [rule_doc(puntos=1), rule_doc("URL_ACORTADOR", puntos=500)]
+            )
     finally:
         app_logger.propagate = False
     assert [r.puntos for r in rules] == [15, 10] and mismatched == 2
@@ -140,18 +171,23 @@ async def test_analysis_uses_catalog_brands_and_disabled_rules() -> None:
     def api(name: str) -> AsyncMock:
         m = AsyncMock()
         m.check_url.return_value = ReputationResult(
-            reputation=Reputation(api=name, estado=SourceStatus.OK, positivo=False, detecciones=0))
+            reputation=Reputation(api=name, estado=SourceStatus.OK, positivo=False, detecciones=0)
+        )
         return m
 
     provider = RulesProvider(
         repo([rule_doc("URL_EXCESO_GUIONES", activa=False, parametros={})], [brand_doc("acme")]),
         clock=Clock(),
     )
-    service = AnalysisService(web_risk_client=api("google_web_risk"), virustotal_client=api("virustotal"),
-                              phishtank_client=None, rules_provider=provider)
+    service = AnalysisService(
+        web_risk_client=api("google_web_risk"),
+        virustotal_client=api("virustotal"),
+        phishtank_client=None,
+        rules_provider=provider,
+    )
     out = await service.analyze("url", "https://acme-seguro-login.verifica-ya.net/")
 
     codigos = {h["regla_codigo"] for h in out["hallazgos"]}
-    assert "URL_SUBDOMINIO_ENGANOSO" in codigos      # marca 'acme' viene del catálogo, no del código
-    assert "URL_EXCESO_GUIONES" not in codigos       # regla desactivada en el catálogo
+    assert "URL_SUBDOMINIO_ENGANOSO" in codigos  # marca 'acme' viene del catálogo, no del código
+    assert "URL_EXCESO_GUIONES" not in codigos  # regla desactivada en el catálogo
     assert out["motivo_cortocircuito"] == "suplantacion_marca" and out["score_total"] >= 80

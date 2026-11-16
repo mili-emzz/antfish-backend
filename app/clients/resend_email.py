@@ -1,6 +1,7 @@
 """Cliente HTTP asíncrono para el servicio transaccional de correos Resend (RF-06.2, RNF-06)."""
 
 from typing import Any
+
 import httpx
 
 from app.core.config import settings
@@ -141,11 +142,12 @@ class ResendEmailClient:
             "</p>"
             "</div>"
         )
-        text = f"Tu código para restablecer la contraseña de AntFish es: {code}. Vigencia: 10 minutos."
+        text = (
+            f"Tu código para restablecer la contraseña de AntFish es: {code}. Vigencia: 10 minutos."
+        )
         return await self.send_email(
             to_email=to_email,
             subject=subject,
             html=html,
             text=text,
         )
-

@@ -32,7 +32,7 @@ class QuotaRepository:
 
     async def try_consume(self, api: str, limit_per_minute: int, limit_daily: int) -> bool:
         """True si había cuota y se consumió una unidad; False si algún límite está agotado."""
-        allowed = await self._redis.eval(  # type: ignore[misc]
+        allowed = await self._redis.eval(
             _CONSUME_SCRIPT,
             2,
             f"cuota:{api}:pm",

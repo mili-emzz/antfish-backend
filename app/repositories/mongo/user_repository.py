@@ -1,7 +1,8 @@
 """Repositorio MongoDB con Motor para la colección usuarios."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -40,7 +41,7 @@ class UserRepository:
     ) -> dict[str, Any] | None:
         """Sobrescribe datos de un usuario en pendiente_verificacion y reinicia fecha_registro (D14, RN-23)."""
         oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self._collection.update_one(
             {"_id": oid, "estado_cuenta": "pendiente_verificacion"},
             {
@@ -70,23 +71,23 @@ class UserRepository:
         )
         return result.modified_count > 0
 
-    async def activate_pending_with_google(
-        self, user_id: str | ObjectId, google_sub: str
-    ) -> bool:
+    async def activate_pending_with_google(self, user_id: str | ObjectId, google_sub: str) -> bool:
         """Activa una cuenta pendiente con Google: descarta password_hash (RN-24, D13)."""
         oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._collection.update_one(
             {"_id": oid, "estado_cuenta": "pendiente_verificacion"},
-            {"$set": {
-                "proveedor_auth": "google",
-                "google_sub": google_sub,
-                "password_hash": None,
-                "estado_cuenta": "activa",
-                "email_verificado": True,
-                "fecha_verificacion": now,
-                "password_changed_at": now,
-            }},
+            {
+                "$set": {
+                    "proveedor_auth": "google",
+                    "google_sub": google_sub,
+                    "password_hash": None,
+                    "estado_cuenta": "activa",
+                    "email_verificado": True,
+                    "fecha_verificacion": now,
+                    "password_changed_at": now,
+                }
+            },
         )
         return result.modified_count > 0
 
@@ -99,15 +100,17 @@ class UserRepository:
         oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
         result = await self._collection.update_one(
             {"_id": oid, "estado_cuenta": "activa"},
-            {"$set": {
-                "email": f"deleted_{oid}@deleted.local",
-                "nombre": None,
-                "password_hash": None,
-                "google_sub": None,
-                "email_verificado": False,
-                "estado_cuenta": "eliminada",
-                "fecha_eliminacion": datetime.now(timezone.utc),
-            }},
+            {
+                "$set": {
+                    "email": f"deleted_{oid}@deleted.local",
+                    "nombre": None,
+                    "password_hash": None,
+                    "google_sub": None,
+                    "email_verificado": False,
+                    "estado_cuenta": "eliminada",
+                    "fecha_eliminacion": datetime.now(UTC),
+                }
+            },
             session=session,
         )
         return result.modified_count > 0
@@ -117,20 +120,24 @@ class UserRepository:
         oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
         result = await self._collection.update_one(
             {"_id": oid, "estado_cuenta": "activa"},
-            {"$set": {
-                "password_hash": password_hash,
-                "password_changed_at": datetime.now(timezone.utc),
-            }},
+            {
+                "$set": {
+                    "password_hash": password_hash,
+                    "password_changed_at": datetime.now(UTC),
+                }
+            },
         )
         return result.modified_count > 0
 
     async def mark_as_verified(self, user_id: str) -> bool:
         result = await self._collection.update_one(
             {"_id": ObjectId(user_id)},
-            {"$set": {
-                "estado_cuenta": "activa",
-                "email_verificado": True,
-                "fecha_verificacion": datetime.now(timezone.utc)
-            }}
+            {
+                "$set": {
+                    "estado_cuenta": "activa",
+                    "email_verificado": True,
+                    "fecha_verificacion": datetime.now(UTC),
+                }
+            },
         )
         return result.modified_count > 0

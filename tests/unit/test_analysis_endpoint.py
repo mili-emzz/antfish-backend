@@ -1,7 +1,8 @@
 """Pruebas unitarias para el endpoint y servicio de análisis (RF-01, RF-02, RF-03)."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 from pydantic import ValidationError
 
 from app.api.schemas.analysis import AnalysisRequest
@@ -69,7 +70,9 @@ async def test_analysis_service_orchestration() -> None:
         phishtank_client=mock_pt,
     )
 
-    sms_text = "URGENTE: BBVA cuenta suspendida. Ingresa tu NIP en https://bbva-alerta.seguro.xyz/login"
+    sms_text = (
+        "URGENTE: BBVA cuenta suspendida. Ingresa tu NIP en https://bbva-alerta.seguro.xyz/login"
+    )
     result = await service.analyze(tipo_entrada="sms", contenido=sms_text)
 
     # Verificaciones del flujo
@@ -87,4 +90,3 @@ async def test_analysis_service_orchestration() -> None:
     mock_gwr.check_url.assert_awaited_once()
     mock_vt.check_url.assert_awaited_once()
     mock_pt.check_url.assert_awaited_once()
-

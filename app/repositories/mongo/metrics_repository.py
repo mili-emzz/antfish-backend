@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from bson import ObjectId
@@ -34,7 +34,7 @@ class MetricsRepository:
             {"_id": oid},
             {
                 "$inc": inc,
-                "$set": {"ultima_actualizacion": datetime.now(timezone.utc)},
+                "$set": {"ultima_actualizacion": datetime.now(UTC)},
             },
             upsert=True,
             session=session,

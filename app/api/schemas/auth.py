@@ -1,6 +1,7 @@
 """DTOs y esquemas Pydantic para los flujos de autenticación y cuenta."""
 
 from typing import Any
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 

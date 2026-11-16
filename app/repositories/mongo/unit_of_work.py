@@ -17,6 +17,8 @@ class UnitOfWork:
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[AsyncIOMotorClientSession]:
         """Abre una sesión con transacción ACID: commit al salir, abort si hay excepción."""
-        async with await self._db.client.start_session() as session:
-            async with session.start_transaction():
-                yield session
+        async with (
+            await self._db.client.start_session() as session,
+            session.start_transaction(),
+        ):
+            yield session

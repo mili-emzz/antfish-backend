@@ -11,7 +11,7 @@ Coordina:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bson import ObjectId
@@ -27,10 +27,8 @@ from app.core.exceptions import AnalysisNotFoundError, PersistenceError
 from app.core.logging import logger
 from app.core.security import generate_message_hmac
 from app.engine.models import (
-    CircuitBreakerReason,
     Finding,
     Reputation,
-    RiskLevel,
     SourceStatus,
     UrlFeatures,
 )
@@ -42,9 +40,9 @@ from app.engine.url_heuristics import select_top_urls
 from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
 from app.repositories.mongo.unit_of_work import UnitOfWork
-from app.services.rules_provider import RulesProvider
 from app.repositories.redis.quota_repository import QuotaRepository
 from app.repositories.redis.reputation_cache import ReputationCacheRepository
+from app.services.rules_provider import RulesProvider
 
 API_RESPONSE_TTL_DAYS = 30
 
@@ -142,7 +140,7 @@ class AnalysisService:
         payload: dict[str, Any] = {
             r.api: {"positivo": r.positivo, "detecciones": r.detecciones} for r in reputations
         }
-        payload["fecha_consulta"] = datetime.now(timezone.utc).isoformat()
+        payload["fecha_consulta"] = datetime.now(UTC).isoformat()
         try:
             await self._cache.set(url, payload)
         except RedisError as exc:
@@ -178,7 +176,7 @@ class AnalysisService:
         permits = await asyncio.gather(*(self._consume_quota(n) for n in api_names))
         tasks = [
             fn(url) if allowed else self._quota_exhausted(name)
-            for fn, name, allowed in zip(check_fns, api_names, permits)
+            for fn, name, allowed in zip(check_fns, api_names, permits, strict=True)
         ]
 
         # Consultas paralelas concurrentes mediante asyncio.gather (RF-02.2)
@@ -191,9 +189,7 @@ class AnalysisService:
         for idx, item in enumerate(raw_results):
             api_name = api_names[idx]
             if isinstance(item, Exception):
-                logger.warning(
-                    f"Excepción al consultar API {api_name}: {type(item).__name__}"
-                )
+                logger.warning(f"Excepción al consultar API {api_name}: {type(item).__name__}")
                 reputations.append(
                     Reputation(
                         api=api_name,
@@ -254,7 +250,7 @@ class AnalysisService:
         Returns:
             (resultado conforme a AnalysisResponse, respuestas crudas {url: {api: raw}}).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         analisis_parcial = False
         api_responses: dict[str, dict[str, Any]] = {}
 
@@ -321,9 +317,7 @@ class AnalysisService:
         # 3. Consultas paralelas a las APIs externas para cada una de las hasta 2 URLs
         urls_reputations: list[list[Reputation]] = []
         for feat in selected_url_features:
-            reps, api_fallo, raw_by_api = await self._query_external_apis_for_url(
-                feat.url
-            )
+            reps, api_fallo, raw_by_api = await self._query_external_apis_for_url(feat.url)
             urls_reputations.append(reps)
             api_responses[feat.url] = raw_by_api
             if api_fallo:
@@ -346,9 +340,7 @@ class AnalysisService:
             reps = urls_reputations[idx]
             puntos_apis, api_findings, es_ln = evaluate_api_reputations(reps)
             riesgo_combinado = puntos_apis + feat.puntos_sintacticos
-            url_evaluations.append(
-                (feat, puntos_apis, api_findings, es_ln, reps, riesgo_combinado)
-            )
+            url_evaluations.append((feat, puntos_apis, api_findings, es_ln, reps, riesgo_combinado))
 
         # La URL dominante es la de mayor riesgo combinado (APIs + sintaxis)
         url_evaluations.sort(key=lambda item: item[5], reverse=True)
@@ -357,7 +349,6 @@ class AnalysisService:
         dominant_feat = dominant_eval[0]
         puntos_apis = dominant_eval[1]
         api_findings = dominant_eval[2]
-        es_lista_negra = dominant_eval[3]
         dominant_reputations = dominant_eval[4]
 
         # Verificar si alguna de las URLs analizadas disparó cortocircuito por lista negra
@@ -376,9 +367,7 @@ class AnalysisService:
         nivel_riesgo = get_risk_level(score_total)
 
         # Consolidar todos los hallazgos de la URL dominante + texto
-        all_findings: list[Finding] = (
-            api_findings + dominant_feat.hallazgos + text_findings
-        )
+        all_findings: list[Finding] = api_findings + dominant_feat.hallazgos + text_findings
         recommendations = generate_recommendations(nivel_riesgo, all_findings)
 
         # Estructurar urls_extraidas
@@ -404,9 +393,7 @@ class AnalysisService:
                 "url": dominant_feat.puntos_sintacticos,
                 "texto": puntos_texto,
             },
-            "motivo_cortocircuito": (
-                motivo_cortocircuito.value if motivo_cortocircuito else None
-            ),
+            "motivo_cortocircuito": (motivo_cortocircuito.value if motivo_cortocircuito else None),
             "analisis_parcial": analisis_parcial,
             "hallazgos": [
                 {
@@ -482,9 +469,7 @@ class AnalysisService:
                     for api, raw in by_api.items()
                 ]
                 await self._analysis_repo.insert_api_responses(raw_docs, session)
-                await self._metrics_repo.increment(
-                    uid, result["tipo_entrada"], es_amenaza, session
-                )
+                await self._metrics_repo.increment(uid, result["tipo_entrada"], es_amenaza, session)
         except PyMongoError as exc:
             logger.error(f"Fallo de persistencia del análisis: {type(exc).__name__}")
             raise PersistenceError() from exc
@@ -495,7 +480,7 @@ class AnalysisService:
         """Convierte un documento de analisis al formato de AnalysisResponse."""
         fecha = doc["fecha"]
         if fecha.tzinfo is None:
-            fecha = fecha.replace(tzinfo=timezone.utc)
+            fecha = fecha.replace(tzinfo=UTC)
         return {
             "id": str(doc["_id"]),
             "tipo_entrada": doc["tipo_entrada"],
@@ -538,9 +523,7 @@ class AnalysisService:
             raise AnalysisNotFoundError()
         try:
             async with self._uow.transaction() as session:
-                await self._analysis_repo.delete_analysis(
-                    doc["_id"], ObjectId(user_id), session
-                )
+                await self._analysis_repo.delete_analysis(doc["_id"], ObjectId(user_id), session)
         except PyMongoError as exc:
             logger.error(f"Fallo al borrar el análisis: {type(exc).__name__}")
             raise PersistenceError() from exc

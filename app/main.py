@@ -1,14 +1,17 @@
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from motor.motor_asyncio import AsyncIOMotorClient
+from typing import Any
+
 import redis.asyncio as redis
-from app.core.config import settings
+from fastapi import FastAPI
+from motor.motor_asyncio import AsyncIOMotorClient
+
+from app.api.errors import register_exception_handlers
 from app.api.v1 import analysis, auth, health, metrics
 from app.container import Container
-from app.api.errors import register_exception_handlers
+from app.core.config import settings
 
 # 1. Crear el cliente de conexión a MongoDB
-db_client = AsyncIOMotorClient(settings.MONGODB_URL)
+db_client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(settings.MONGODB_URL)
 
 # 2. Seleccionar la base de datos (antfish_db)
 db = db_client[settings.DATABASE_NAME]
@@ -18,6 +21,7 @@ redis_client = redis.from_url(settings.REDIS_URL)
 
 # 4. Inicializar el contenedor entregándole ambas bases de datos
 container = Container(db=db, redis_client=redis_client)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +37,7 @@ async def lifespan(app: FastAPI):
     db_client.close()
     await redis_client.close()
 
+
 _is_prod = settings.ENVIRONMENT == "production"
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -44,11 +49,10 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # Vincular el contenedor al "state" de la aplicación
-app.state.container = container 
+app.state.container = container
 
 # Registrar las rutas
 app.include_router(health.router)  # GET /health en la raíz (§9.6)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(analysis.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
-

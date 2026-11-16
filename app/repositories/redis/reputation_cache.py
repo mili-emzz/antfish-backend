@@ -20,7 +20,9 @@ class ReputationCacheRepository:
 
     def __init__(self, redis_client: Redis, ttl_seconds: int | None = None) -> None:
         self._redis = redis_client
-        self._ttl = ttl_seconds if ttl_seconds is not None else settings.REPUTATION_CACHE_TTL_SECONDS
+        self._ttl = (
+            ttl_seconds if ttl_seconds is not None else settings.REPUTATION_CACHE_TTL_SECONDS
+        )
 
     @staticmethod
     def _key(normalized_url: str) -> str:

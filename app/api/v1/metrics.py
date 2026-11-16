@@ -15,7 +15,7 @@ def get_metrics_service(request: Request) -> MetricsService:
     """Resuelve MetricsService desde el Composition Root."""
     container = getattr(request.app.state, "container", None)
     if container is not None and hasattr(container, "metrics_service"):
-        return container.metrics_service  # type: ignore[no-any-return]
+        return container.metrics_service
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Servicio de métricas no disponible en la aplicación",

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
 import httpx
 
 from app.core.logging import logger
@@ -94,7 +95,7 @@ class BaseReputationClient:
 
             if response.status_code == 429:
                 logger.warning(
-                    f"API de reputación excedió límite de peticiones (429)",
+                    "API de reputación excedió límite de peticiones (429)",
                     extra={"api": self.api_name},
                 )
                 return response, SourceStatus.RATE_LIMIT
@@ -122,7 +123,7 @@ class BaseReputationClient:
             )
             return None, SourceStatus.ERROR
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error(
                 f"Error inesperado en cliente de reputación: {type(exc).__name__}",
                 extra={"api": self.api_name},
@@ -139,4 +140,3 @@ class BaseReputationClient:
             ReputationResult con el modelo Reputation y la respuesta JSON cruda.
         """
         raise NotImplementedError("check_url debe ser implementado por la subclase.")
-

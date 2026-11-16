@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -32,10 +33,13 @@ class AnalysisRequest(BaseModel):
         content = self.contenido
         if self.tipo_entrada == "sms":
             if len(content) > 1600:
-                raise ValueError("El contenido para tipo_entrada 'sms' no puede exceder los 1,600 caracteres.")
-        elif self.tipo_entrada == "url":
-            if len(content) > 2048:
-                raise ValueError("El contenido para tipo_entrada 'url' no puede exceder los 2,048 caracteres.")
+                raise ValueError(
+                    "El contenido para tipo_entrada 'sms' no puede exceder los 1,600 caracteres."
+                )
+        elif self.tipo_entrada == "url" and len(content) > 2048:
+            raise ValueError(
+                "El contenido para tipo_entrada 'url' no puede exceder los 2,048 caracteres."
+            )
         return self
 
 
@@ -62,19 +66,29 @@ class ExtractedUrlSchema(BaseModel):
 class ReputationSchema(BaseModel):
     """Snapshot del estado devuelto por una API externa de reputación."""
 
-    api: str = Field(..., description="Nombre de la API externa (google_web_risk, virustotal, phishtank)")
+    api: str = Field(
+        ..., description="Nombre de la API externa (google_web_risk, virustotal, phishtank)"
+    )
     estado: str = Field(..., description="Estado de la consulta (ok, timeout, rate_limit, error)")
     positivo: bool = Field(..., description="Indica si la fuente confirmó amenaza maliciosa")
     detecciones: int | None = Field(default=None, description="Número de detecciones reportadas")
-    desde_cache: bool = Field(default=False, description="Indica si el resultado provino de caché Redis")
+    desde_cache: bool = Field(
+        default=False, description="Indica si el resultado provino de caché Redis"
+    )
 
 
 class LayerPointsSchema(BaseModel):
     """Puntos acumulados por cada capa de análisis (recortados a sus topes respectivos)."""
 
-    apis: int = Field(..., ge=0, le=60, description="Puntos de Capa 1: Inteligencia externa (tope 60)")
-    url: int = Field(..., ge=0, le=30, description="Puntos de Capa 2: Heurística sintáctica de URL (tope 30)")
-    texto: int = Field(..., ge=0, le=20, description="Puntos de Capa 3: Heurística de texto (tope 20)")
+    apis: int = Field(
+        ..., ge=0, le=60, description="Puntos de Capa 1: Inteligencia externa (tope 60)"
+    )
+    url: int = Field(
+        ..., ge=0, le=30, description="Puntos de Capa 2: Heurística sintáctica de URL (tope 30)"
+    )
+    texto: int = Field(
+        ..., ge=0, le=20, description="Puntos de Capa 3: Heurística de texto (tope 20)"
+    )
 
 
 class AnalysisResponse(BaseModel):
@@ -124,10 +138,9 @@ class AnalysisResponse(BaseModel):
         description="Estado y resultado de las consultas a APIs externas de la URL dominante",
     )
     fecha: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Marca temporal en la que se generó el análisis",
     )
-
 
 
 class HistoryPageResponse(BaseModel):

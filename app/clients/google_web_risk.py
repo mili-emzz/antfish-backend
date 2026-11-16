@@ -7,6 +7,7 @@ Evalúa amenazas de tipo MALWARE, SOCIAL_ENGINEERING y UNWANTED_SOFTWARE.
 from __future__ import annotations
 
 from typing import Any
+
 import httpx
 
 from app.clients.base import BaseReputationClient, ReputationResult
@@ -50,9 +51,7 @@ class GoogleWebRiskClient(BaseReputationClient):
         """
         if not self.api_key:
             logger.warning("GOOGLE_WEB_RISK_API_KEY no configurada; degradando consulta")
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))
 
         headers = {
             "X-Goog-Api-Key": self.api_key,
@@ -71,9 +70,7 @@ class GoogleWebRiskClient(BaseReputationClient):
         )
 
         if estado != SourceStatus.OK or response is None:
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(estado)
-            )
+            return ReputationResult(reputation=self._build_fallback_reputation(estado))
 
         try:
             data: dict[str, Any] = response.json()
@@ -96,11 +93,6 @@ class GoogleWebRiskClient(BaseReputationClient):
                 ),
                 raw_response=data,
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                f"Error al deserializar respuesta de Web Risk: {type(exc).__name__}"
-            )
-            return ReputationResult(
-                reputation=self._build_fallback_reputation(SourceStatus.ERROR)
-            )
-
+        except Exception as exc:
+            logger.error(f"Error al deserializar respuesta de Web Risk: {type(exc).__name__}")
+            return ReputationResult(reputation=self._build_fallback_reputation(SourceStatus.ERROR))

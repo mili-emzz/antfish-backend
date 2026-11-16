@@ -22,5 +22,5 @@ class RateLimitRepository:
 
     async def hit(self, key: str, window_seconds: int) -> tuple[int, int]:
         """Incrementa la clave y devuelve (contador, segundos_restantes_de_la_ventana)."""
-        count, ttl = await self._redis.eval(_HIT_SCRIPT, 1, key, window_seconds)  # type: ignore[misc]
+        count, ttl = await self._redis.eval(_HIT_SCRIPT, 1, key, window_seconds)
         return int(count), max(int(ttl), 1)

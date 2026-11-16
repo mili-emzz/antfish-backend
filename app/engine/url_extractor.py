@@ -69,10 +69,7 @@ def normalize_url(raw_url: str) -> str:
     hostname = hostname.lower()
 
     port = parsed.port
-    if port and port not in (80, 443):
-        normalized_netloc = f"{hostname}:{port}"
-    else:
-        normalized_netloc = hostname
+    normalized_netloc = f"{hostname}:{port}" if port and port not in (80, 443) else hostname
 
     # Normalizar ruta (conserva el path pero elimina slashes redundantes)
     path = parsed.path or ""
@@ -134,7 +131,7 @@ def extract_urls_from_text(text: str) -> list[str]:
         start_idx = match.start()
 
         # Evitar capturar subcadenas ya cubiertas por un esquema http/https previo
-        prefix = text[max(0, start_idx - 8):start_idx].lower()
+        prefix = text[max(0, start_idx - 8) : start_idx].lower()
         if "http://" in prefix or "https://" in prefix:
             continue
 
@@ -154,4 +151,3 @@ def extract_urls_from_text(text: str) -> list[str]:
             result.append(normalized)
 
     return result
-
