@@ -3,10 +3,8 @@ from redis.asyncio import Redis
 
 from app.clients.google_identity import GoogleIdentityClient
 from app.clients.google_web_risk import GoogleWebRiskClient
-from app.clients.phishtank import PhishTankClient
 from app.clients.resend_email import ResendEmailClient
 from app.clients.virustotal import VirusTotalClient
-from app.core.config import settings
 from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
 from app.repositories.mongo.rules_repository import RulesRepository
@@ -23,6 +21,10 @@ from app.services.metrics_service import MetricsService
 from app.services.rate_limiter import RateLimiter
 from app.services.rules_provider import RulesProvider
 from app.services.verification_service import VerificationService
+
+# PhishTank retirado (2026-11-16): código conservado en app/clients/phishtank.py.
+# Para reactivarlo: from app.clients.phishtank import PhishTankClient y
+# from app.core.config import settings
 
 
 class Container:
@@ -45,7 +47,10 @@ class Container:
         self.web_risk_client = GoogleWebRiskClient()
         self.google_identity_client = GoogleIdentityClient()
         self.virustotal_client = VirusTotalClient()
-        self.phishtank_client = PhishTankClient() if settings.PHISHTANK_ENABLED else None
+        # PhishTank retirado: sustituto por decidir (URLhaus/OpenPhish/feed local). Para reactivarlo,
+        # descomentar el import y la línea siguiente (y PHISHTANK_ENABLED=true); ver ADR pendiente.
+        # self.phishtank_client = PhishTankClient() if settings.PHISHTANK_ENABLED else None
+        self.phishtank_client = None
 
         # Servicios
         self.verification_service = VerificationService(

@@ -26,7 +26,7 @@ python -m pytest tests/integration -q
 | `api/deps.py` `get_current_user` | Listo (JWT access, `iat >= password_changed_at`, 403 `ACCOUNT_NOT_VERIFIED`, 401 otros estados) |
 | Motor heurístico (RF-02.3/02.4), scoring, recomendaciones | Listo |
 | Clientes Web Risk y VirusTotal | **Verificados contra APIs reales** (URLs de prueba dan positivo) |
-| PhishTank | **Deshabilitado** (`PHISHTANK_ENABLED=false`): 403 de Cloudflare, sin claves nuevas. Código conservado |
+| PhishTank | **Retirado (2026-11-16)**: `container.py` ya no lo cablea (comentado; `phishtank_client=None` aunque `PHISHTANK_ENABLED=true`). Código, config, regla `API_PHISHTANK` y enum de Mongo se conservan. Sustituto por decidir |
 | Caché de reputación RF-04 (`rep:{url_normalizada}`, TTL 3600) | Listo |
 | Rate limit y cuota dual | Listo (ver decisiones) |
 | Catálogo de reglas/marcas (`rules_repository`, `rules_provider`, `initial_data.json`) | Listo |

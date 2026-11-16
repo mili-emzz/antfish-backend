@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     GOOGLE_WEB_RISK_API_KEY: str = ""
     VIRUSTOTAL_API_KEY: str = ""
     PHISHTANK_API_KEY: str = ""
-    # PhishTank deshabilitado por defecto: su API devuelve 403 (Cloudflare) y no emite claves nuevas.
+    # PhishTank RETIRADO (el contenedor ya no lo cablea, aunque PHISHTANK_ENABLED sea true).
+    # Antes: deshabilitado por defecto: su API devuelve 403 (Cloudflare) y no emite claves nuevas.
     # Con False no se consulta ni cuenta como fallo; el código del cliente se conserva.
     PHISHTANK_ENABLED: bool = False
     REPUTATION_CLIENT_TIMEOUT: float = 1.5

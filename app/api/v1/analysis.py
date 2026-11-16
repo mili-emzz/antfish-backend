@@ -39,7 +39,7 @@ def get_analysis_service(request: Request) -> AnalysisService:
     summary="Análisis de SMS o URL sospechosa",
     description=(
         "Analiza el contenido de un SMS o enlace URL evaluando heurísticas locales (sintácticas y de texto) "
-        "y consultando en paralelo las fuentes externas de inteligencia (Google Web Risk, VirusTotal, PhishTank). "
+        "y consultando en paralelo las fuentes externas de inteligencia (Google Web Risk, VirusTotal). "
         "Devuelve la puntuación consolidada de riesgo (0-100), el semáforo y recomendaciones (RF-01, RF-02, RF-03)."
     ),
 )
