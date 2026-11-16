@@ -2,6 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from redis.asyncio import Redis
 
 from app.core.config import settings
+from app.clients.google_identity import GoogleIdentityClient
 from app.clients.google_web_risk import GoogleWebRiskClient
 from app.clients.phishtank import PhishTankClient
 from app.clients.resend_email import ResendEmailClient
@@ -17,6 +18,7 @@ from app.repositories.redis.rate_limit_repository import RateLimitRepository
 from app.repositories.redis.verification_repository import VerificationRepository
 from app.services.analysis_service import AnalysisService
 from app.services.auth_service import AuthService
+from app.services.health_service import HealthService
 from app.services.metrics_service import MetricsService
 from app.services.rate_limiter import RateLimiter
 from app.services.rules_provider import RulesProvider
@@ -41,6 +43,7 @@ class Container:
         # Clientes externos de comunicación e inteligencia de amenazas (RF-02.2, RF-06.2)
         self.email_client = ResendEmailClient()
         self.web_risk_client = GoogleWebRiskClient()
+        self.google_identity_client = GoogleIdentityClient()
         self.virustotal_client = VirusTotalClient()
         self.phishtank_client = PhishTankClient() if settings.PHISHTANK_ENABLED else None
 
@@ -56,6 +59,7 @@ class Container:
             unit_of_work=self.unit_of_work,
             analysis_repository=self.analysis_repository,
             metrics_repository=self.metrics_repository,
+            google_client=self.google_identity_client,
         )
         self.analysis_service = AnalysisService(
             web_risk_client=self.web_risk_client,
@@ -69,3 +73,7 @@ class Container:
             rules_provider=self.rules_provider,
         )
         self.metrics_service = MetricsService(self.metrics_repository)
+        self.health_service = HealthService(
+            mongo_probe=lambda: db.command("ping"),
+            redis_probe=redis_client.ping,
+        )

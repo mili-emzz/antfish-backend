@@ -8,6 +8,7 @@ from app.api.deps import get_current_user, rate_limit_auth
 from app.api.schemas.auth import (
     DeleteAccountRequest,
     ForgotPasswordRequest,
+    GoogleLoginRequest,
     LoginRequest,
     LoginResponse,
     MessageResponse,
@@ -20,6 +21,9 @@ from app.api.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.core.exceptions import (
+    AccountConflictError,
+    GoogleTokenInvalidError,
+    IdentityProviderUnavailableError,
     AccountNotVerifiedError,
     DuplicateEmailError,
     EmailDeliveryError,
@@ -204,6 +208,45 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     return RefreshResponse(**tokens)
+
+
+@router.post(
+    "/google",
+    response_model=LoginResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("google"))],
+    summary="Login, alta o vinculación con Google (RF-06.4, RF-06.5)",
+    description=(
+        "Valida el ID token (firma, expiración, aud, emisor, email_verified) y devuelve "
+        "Access y Refresh Tokens. Token inválido: 401; correo de Google no verificado o cuenta "
+        "ya vinculada a otra identidad: 409; Google sin configurar o inalcanzable: 503."
+    ),
+)
+async def login_google(
+    payload: GoogleLoginRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> LoginResponse:
+    try:
+        tokens = await auth_service.login_with_google(payload.id_token)
+    except GoogleTokenInvalidError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de Google inválido",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except UnauthorizedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=exc.message,
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except AccountConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except IdentityProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.message
+        ) from exc
+    return LoginResponse(**tokens)
 
 
 @router.post(

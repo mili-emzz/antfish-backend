@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "no-reply@antfish.xyz"
+    # Client ID (OAuth web) con el que Google emite el ID token (aud). Vacío = POST /auth/google responde 503.
+    GOOGLE_CLIENT_ID: str = ""
 
     # Secretos obligatorios, sin valor por defecto (RNF-03, RNF-05): la app no arranca sin ellos.
     HMAC_PEPPER: str

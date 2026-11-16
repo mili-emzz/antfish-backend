@@ -47,12 +47,12 @@ python -m pytest tests/integration -q
 `ENVIRONMENT`, `MONGODB_URL`, `MONGODB_MIGRATION_URL`, `DATABASE_NAME`, `REDIS_URL`, `HMAC_PEPPER`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `RESEND_API_KEY`, `GOOGLE_WEB_RISK_API_KEY`, `VIRUSTOTAL_API_KEY`, `PHISHTANK_API_KEY`, `PHISHTANK_ENABLED`, `MONGO_ROOT_USER/PASSWORD`, `MONGO_APP_USER/PASSWORD`, `MONGO_MIGRATOR_USER/PASSWORD`, `QUOTA_*`, `RATE_LIMIT_*`, `REPUTATION_CACHE_TTL_SECONDS`, `RULES_CACHE_TTL_SECONDS`, `RULES_RETRY_SECONDS`. Plantilla: `.env.example`. **No leer ni imprimir `.env`** (el clasificador de permisos lo bloquea y es sensible); para editarlo, hacerlo por script sin mostrar valores.
 
 ## Pendiente (orden sugerido)
-1. **Endpoints de auth que faltan** (`resend-code`, `forgot`, `reset`, `refresh` ya hechos y probados con fakes): `DELETE /auth/me` (reautenticación, anonimización O12, purga ACID; falta método en `UserRepository`), al final `POST /auth/google` (requiere `google_identity.py` vacío y **agregar `google-auth`: pedir aprobación**). Cada uno con su rate limit y pruebas.
-2. `GET /health` real (comprobar Mongo y Redis; `api/v1/health.py` vacío, hoy `/health` en `main.py` devuelve `ok` fijo).
-3. **RNF-01:** las 2 URLs de un SMS se consultan en serie (~1.0-1.2 s por URL con ambas APIs) → paralelizar con `asyncio.gather`.
+1. **Auth:** hechos `register`, `verify-email`, `resend-code`, `login`, `refresh`, `forgot`, `reset`, `DELETE /auth/me` (solo local; Google → 501) y `POST /auth/google` (código listo; `google-auth==2.62.2` ya instalado y fijado (2026-11-16; decodificación verificada con un certificado RSA local); y poner `GOOGLE_CLIENT_ID` en `.env`). Pendiente: rama `id_token` de `DELETE /auth/me` (RN-21; decidir si cuentas locales vinculadas usan password o id_token) y probar la validación real con un token de Google. `tests/integration/test_delete_account_mongo.py` está escrito pero **no se ha ejecutado** (necesita MONGO_URI root).
+2. ~~`GET /health` real~~ **Hecho** (`services/health_service.py`, `api/v1/health.py`; ADR #79 propuesto).
+3. **RNF-01:** las 2 URLs de un SMS se consultan en serie (~1.0-1.2 s por URL). **Decisión del usuario (2026-11-16): NO paralelizar** mientras el tiempo de respuesta no aumente demasiado; no reabrir sin medir.
 4. Instalar/correr ruff, mypy, import-linter (pedir aprobación).
 5. **PhishTank:** decidir sustituirlo (URLhaus/OpenPhish), feed local o eliminarlo (cambia RF-02.2/RN-02, requiere ADR).
-6. Endurecimiento restante: migrar Motor→PyMongo async (Motor deprecado; AGENTS.md pide PyMongo async), `google-auth` en deps, logger JSON con escape, `except Exception` residuales (clientes), gitleaks en pre-commit/CI, Dockerfile y CI, Redis con contraseña/TLS, Mongo 3 nodos o Atlas con TLS, credenciales fuera del healthcheck, secretos en gestor, `docker-compose` para producción.
+6. Endurecimiento restante: migrar Motor→PyMongo async (Motor deprecado; AGENTS.md pide PyMongo async), logger JSON con escape, `except Exception` residuales (clientes), gitleaks en pre-commit/CI, Dockerfile y CI, Redis con contraseña/TLS, Mongo 3 nodos o Atlas con TLS, credenciales fuera del healthcheck, secretos en gestor, `docker-compose` para producción.
 7. Opcional: `scripts/seed_rules.py` (en `/scripts`, ignorado); limpiar historial git de `context/` y `.pyc` (`git filter-repo`, solo si se pide).
 
 ## Documentación sincronizada (2026-11-16)
@@ -70,6 +70,8 @@ Casi todo el trabajo de esta sesión está **sin commitear** (`git status`; el u
 - Imitar un navegador para saltar Cloudflare de PhishTank se rechazó (es evasión de una protección).
 - Tests: `tests/conftest.py` genera secretos aleatorios por ejecución (no hay secretos fijos en el repo). Pruebas de integración dejan claves de cuota efímeras en Redis db 15.
 - Stack aislado para probar compose/Mongo sin tocar el real: `docker compose -p aftest --env-file <archivo temporal con puertos 27099/6399 y credenciales aleatorias> up -d --wait`, esperar a que `mongo-users` termine, probar con `directConnection=true`, y `down -v` al final.
+
+- **`localhost` en Windows tarda ~2 s en conectar Redis** (intenta IPv6 `::1` primero): `/health` daba `degradado` falso con el timeout de 2 s. Usar `REDIS_URL=redis://127.0.0.1:6379/0` en `.env` local (no afecta a Docker/producción).
 
 ## Metodología acordada con el usuario
 1. Explorar docs y código; **preguntar (AskUserQuestion) las decisiones que cambien contratos, modelo, TTL, políticas fail-open/closed, dependencias o infraestructura**; el resto se decide y se declara como supuesto.

@@ -91,6 +91,20 @@ class ReauthMethodUnavailableError(AntFishError):
         super().__init__(message)
 
 
+class IdentityProviderUnavailableError(AntFishError):
+    """Google Identity no disponible o sin configurar; fail-closed (HTTP 503)."""
+
+    def __init__(self, message: str = "Servicio de identidad no disponible") -> None:
+        super().__init__(message)
+
+
+class AccountConflictError(AntFishError):
+    """Conflicto al vincular o crear la cuenta federada (HTTP 409)."""
+
+    def __init__(self, message: str = "Conflicto con la cuenta existente") -> None:
+        super().__init__(message)
+
+
 class GoogleTokenInvalidError(AntFishError):
     """Token de identidad de Google inválido o no certificado."""
 

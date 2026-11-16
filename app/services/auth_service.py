@@ -6,9 +6,11 @@ import jwt
 from argon2 import PasswordHasher
 from bson import ObjectId
 from bson.errors import InvalidId
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
+from app.clients.google_identity import GoogleIdentityClient
 from app.core.exceptions import (
+    AccountConflictError,
     AccountNotVerifiedError,
     DuplicateEmailError,
     EmailDeliveryError,
@@ -52,11 +54,13 @@ class AuthService:
         unit_of_work: UnitOfWork | None = None,
         analysis_repository: AnalysisRepository | None = None,
         metrics_repository: MetricsRepository | None = None,
+        google_client: GoogleIdentityClient | None = None,
     ) -> None:
         self._user_repo = user_repository
         self._uow = unit_of_work
         self._analysis_repo = analysis_repository
         self._metrics_repo = metrics_repository
+        self._google = google_client
         self.verification_service = verification_service
 
     def hash_password(self, password: str) -> str:
@@ -298,21 +302,85 @@ class AuthService:
         if estado != "activa":
             raise UnauthorizedError("Cuenta no autorizada")
 
-        # Generación de tokens JWT
-        user_id = str(user["_id"])
-        token_payload = {
-            "sub": user_id,
-            "email": user["email"],
-        }
+        return self._issue_tokens(user)
 
-        access_token = create_access_token(token_payload)
-        refresh_token = create_refresh_token(token_payload)
-
+    @staticmethod
+    def _issue_tokens(user: dict[str, Any]) -> dict[str, str]:
+        """Emite Access (30 min) y Refresh (30 días) para una cuenta ya validada."""
+        token_payload = {"sub": str(user["_id"]), "email": user["email"]}
         return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": create_access_token(token_payload),
+            "refresh_token": create_refresh_token(token_payload),
             "token_type": "bearer",
         }
+
+    async def login_with_google(self, id_token: str) -> dict[str, str]:
+        """Login/alta/vinculación con Google ID Token (RF-06.4, RF-06.5, RN-18, RN-19, RN-24, D13).
+
+        - Token inválido -> GoogleTokenInvalidError (401); Google/config no disponible -> 503.
+        - email_verified = false -> AccountConflictError (409).
+        - Sin cuenta: alta `google`, `activa`, verificada, sin password.
+        - Cuenta `pendiente_verificacion`: se activa, se descarta password_hash y se fija
+          password_changed_at (RN-24).
+        - Cuenta local `activa`: se vincula google_sub conservando proveedor y password (RN-18);
+          si ya tenía otro google_sub -> 409.
+        - Cuenta suspendida o eliminada: UnauthorizedError (401).
+        El ID token nunca se guarda ni se registra.
+        """
+        assert self._google is not None
+        identity = await self._google.verify_id_token(id_token)
+        if not identity.email_verified:
+            raise AccountConflictError("El correo de Google no está verificado")
+
+        for _ in range(2):  # un reintento si otra petición creó la cuenta en paralelo
+            user = await self._user_repo.find_by_google_sub(identity.sub)
+            if user is None:
+                user = await self._user_repo.find_by_email(identity.email)
+
+            if user is None:
+                try:
+                    user = await self._create_google_user(identity.sub, identity.email, identity.nombre)
+                except DuplicateKeyError:
+                    continue
+                return self._issue_tokens(user)
+
+            estado = user.get("estado_cuenta")
+            if estado == "pendiente_verificacion":
+                if not await self._user_repo.activate_pending_with_google(user["_id"], identity.sub):
+                    continue
+            elif estado == "activa":
+                current_sub = user.get("google_sub")
+                if current_sub is None:
+                    if not await self._user_repo.link_google_sub(user["_id"], identity.sub):
+                        continue
+                elif current_sub != identity.sub:
+                    raise AccountConflictError("La cuenta ya está vinculada a otra identidad de Google")
+            else:
+                raise UnauthorizedError("Cuenta no autorizada")
+            return self._issue_tokens(user)
+
+        raise UnauthorizedError("Cuenta no autorizada")
+
+    async def _create_google_user(
+        self, google_sub: str, email: str, nombre: str | None
+    ) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        display = (nombre or email.split("@", 1)[0])[:100]
+        return await self._user_repo.create_user(
+            {
+                "email": email,
+                "proveedor_auth": "google",
+                "google_sub": google_sub,
+                "password_hash": None,
+                "nombre": display,
+                "estado_cuenta": "activa",
+                "email_verificado": True,
+                "fecha_verificacion": now,
+                "fecha_registro": now,
+                "password_changed_at": None,
+                "fecha_eliminacion": None,
+            }
+        )
 
     async def delete_account(self, user: dict[str, Any], password: str) -> None:
         """Baja de cuenta local con reautenticación, anonimización y purga ACID (RF-06.7, O12, D4).

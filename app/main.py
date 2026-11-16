@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
 import redis.asyncio as redis
 from app.core.config import settings
-from app.api.v1 import analysis, auth, metrics
+from app.api.v1 import analysis, auth, health, metrics
 from app.container import Container
 from app.api.errors import register_exception_handlers
 
@@ -47,10 +47,8 @@ register_exception_handlers(app)
 app.state.container = container 
 
 # Registrar las rutas
+app.include_router(health.router)  # GET /health en la raíz (§9.6)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(analysis.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
 
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}

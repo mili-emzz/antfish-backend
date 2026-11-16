@@ -57,6 +57,39 @@ class UserRepository:
         """Alias de compatibilidad para find_by_email."""
         return await self.find_by_email(email)
 
+    async def find_by_google_sub(self, google_sub: str) -> dict[str, Any] | None:
+        """Busca un usuario por su identificador estable de Google (índice parcial único)."""
+        return await self._collection.find_one({"google_sub": google_sub})
+
+    async def link_google_sub(self, user_id: str | ObjectId, google_sub: str) -> bool:
+        """Vincula Google a una cuenta activa sin google_sub; conserva proveedor y password (RN-18)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "activa", "google_sub": None},
+            {"$set": {"google_sub": google_sub}},
+        )
+        return result.modified_count > 0
+
+    async def activate_pending_with_google(
+        self, user_id: str | ObjectId, google_sub: str
+    ) -> bool:
+        """Activa una cuenta pendiente con Google: descarta password_hash (RN-24, D13)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        now = datetime.now(timezone.utc)
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "pendiente_verificacion"},
+            {"$set": {
+                "proveedor_auth": "google",
+                "google_sub": google_sub,
+                "password_hash": None,
+                "estado_cuenta": "activa",
+                "email_verificado": True,
+                "fecha_verificacion": now,
+                "password_changed_at": now,
+            }},
+        )
+        return result.modified_count > 0
+
     async def anonymize_user(
         self,
         user_id: str | ObjectId,

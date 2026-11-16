@@ -160,6 +160,12 @@ class ResetPasswordRequest(_EmailOnlyRequest):
     )
 
 
+class GoogleLoginRequest(BaseModel):
+    """DTO de entrada para login con Google (RF-06.4): el ID token del SDK de Google Sign-In."""
+
+    id_token: str = Field(..., min_length=1, max_length=4096, description="Google ID Token (JWT)")
+
+
 class DeleteAccountRequest(BaseModel):
     """DTO de reautenticación para la baja de cuenta local (RF-06.7)."""
 
