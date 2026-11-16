@@ -32,7 +32,12 @@ class Settings(BaseSettings):
     GOOGLE_WEB_RISK_API_KEY: str = ""
     VIRUSTOTAL_API_KEY: str = ""
     PHISHTANK_API_KEY: str = ""
+    # PhishTank deshabilitado por defecto: su API devuelve 403 (Cloudflare) y no emite claves nuevas.
+    # Con False no se consulta ni cuenta como fallo; el código del cliente se conserva.
+    PHISHTANK_ENABLED: bool = False
     REPUTATION_CLIENT_TIMEOUT: float = 1.5
+    # TTL del caché de reputación rep:{url_normalizada} (RF-04.1).
+    REPUTATION_CACHE_TTL_SECONDS: int = 3600
 
     # Cuota dual por API externa: por minuto y diaria (P5). Ajustar al plan contratado.
     QUOTA_GOOGLE_WEB_RISK_PM: int = 60
@@ -41,6 +46,10 @@ class Settings(BaseSettings):
     QUOTA_VIRUSTOTAL_DAILY: int = 500
     QUOTA_PHISHTANK_PM: int = 20
     QUOTA_PHISHTANK_DAILY: int = 2000
+
+    # Catálogo de reglas y marcas en memoria (CU-11): TTL y reintento tras un fallo de carga.
+    RULES_CACHE_TTL_SECONDS: int = 3600
+    RULES_RETRY_SECONDS: int = 30
 
     # Rate limiting de endpoints (DP-04): ventana fija de 60 s.
     RATE_LIMIT_AUTH_PER_MIN: int = 5

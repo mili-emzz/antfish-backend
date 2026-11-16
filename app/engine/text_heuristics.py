@@ -20,6 +20,7 @@ from collections.abc import Sequence
 
 from app.engine.models import Brand, Finding, Rule
 from app.engine.public_suffixes import DEFAULT_PROTECTED_BRANDS
+from app.engine.rule_catalog import disabled_rule_codes
 
 # Patrones para TXT_LENGUAJE_URGENCIA (+10 pts)
 _URGENCY_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -89,12 +90,13 @@ def analyze_text(
     active_brands = brands if brands is not None else DEFAULT_PROTECTED_BRANDS
 
     findings: list[Finding] = []
+    disabled = disabled_rule_codes(rules)
 
     # 1. Detección de Lenguaje de Urgencia (+10 pts)
     urgency_detected = any(pattern.search(clean_text) for pattern in _URGENCY_PATTERNS) or any(
         pattern.search(normalized_text) for pattern in _URGENCY_PATTERNS
     )
-    if urgency_detected:
+    if urgency_detected and "TXT_LENGUAJE_URGENCIA" not in disabled:
         findings.append(
             Finding(
                 regla_codigo="TXT_LENGUAJE_URGENCIA",
@@ -108,7 +110,7 @@ def analyze_text(
     data_detected = any(pattern.search(clean_text) for pattern in _DATA_REQUEST_PATTERNS) or any(
         pattern.search(normalized_text) for pattern in _DATA_REQUEST_PATTERNS
     )
-    if data_detected:
+    if data_detected and "TXT_SOLICITUD_DATOS" not in disabled:
         findings.append(
             Finding(
                 regla_codigo="TXT_SOLICITUD_DATOS",
@@ -139,7 +141,7 @@ def analyze_text(
     if not leet_detected:
         leet_detected = any(pattern.search(clean_text) for pattern in _GENERIC_LEET_PATTERNS)
 
-    if leet_detected:
+    if leet_detected and "TXT_LEETSPEAK" not in disabled:
         findings.append(
             Finding(
                 regla_codigo="TXT_LEETSPEAK",

@@ -1,21 +1,25 @@
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from redis.asyncio import Redis
 
+from app.core.config import settings
 from app.clients.google_web_risk import GoogleWebRiskClient
 from app.clients.phishtank import PhishTankClient
 from app.clients.resend_email import ResendEmailClient
 from app.clients.virustotal import VirusTotalClient
 from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
+from app.repositories.mongo.rules_repository import RulesRepository
 from app.repositories.mongo.unit_of_work import UnitOfWork
 from app.repositories.mongo.user_repository import UserRepository
 from app.repositories.redis.quota_repository import QuotaRepository
+from app.repositories.redis.reputation_cache import ReputationCacheRepository
 from app.repositories.redis.rate_limit_repository import RateLimitRepository
 from app.repositories.redis.verification_repository import VerificationRepository
 from app.services.analysis_service import AnalysisService
 from app.services.auth_service import AuthService
 from app.services.metrics_service import MetricsService
 from app.services.rate_limiter import RateLimiter
+from app.services.rules_provider import RulesProvider
 from app.services.verification_service import VerificationService
 
 
@@ -27,16 +31,18 @@ class Container:
         self.user_repository = UserRepository(db)
         self.analysis_repository = AnalysisRepository(db)
         self.metrics_repository = MetricsRepository(db)
+        self.rules_provider = RulesProvider(RulesRepository(db))
         self.unit_of_work = UnitOfWork(db)
         self.verification_repo = VerificationRepository(redis_client)
         self.quota_repository = QuotaRepository(redis_client)
+        self.reputation_cache = ReputationCacheRepository(redis_client)
         self.rate_limiter = RateLimiter(RateLimitRepository(redis_client))
 
         # Clientes externos de comunicación e inteligencia de amenazas (RF-02.2, RF-06.2)
         self.email_client = ResendEmailClient()
         self.web_risk_client = GoogleWebRiskClient()
         self.virustotal_client = VirusTotalClient()
-        self.phishtank_client = PhishTankClient()
+        self.phishtank_client = PhishTankClient() if settings.PHISHTANK_ENABLED else None
 
         # Servicios
         self.verification_service = VerificationService(
@@ -56,5 +62,7 @@ class Container:
             metrics_repository=self.metrics_repository,
             unit_of_work=self.unit_of_work,
             quota_repository=self.quota_repository,
+            reputation_cache=self.reputation_cache,
+            rules_provider=self.rules_provider,
         )
         self.metrics_service = MetricsService(self.metrics_repository)

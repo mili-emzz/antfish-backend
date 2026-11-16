@@ -42,7 +42,9 @@ from app.engine.url_heuristics import select_top_urls
 from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
 from app.repositories.mongo.unit_of_work import UnitOfWork
+from app.services.rules_provider import RulesProvider
 from app.repositories.redis.quota_repository import QuotaRepository
+from app.repositories.redis.reputation_cache import ReputationCacheRepository
 
 API_RESPONSE_TTL_DAYS = 30
 
@@ -54,11 +56,13 @@ class AnalysisService:
         self,
         web_risk_client: GoogleWebRiskClient,
         virustotal_client: VirusTotalClient,
-        phishtank_client: PhishTankClient,
+        phishtank_client: PhishTankClient | None = None,
         analysis_repository: AnalysisRepository | None = None,
         metrics_repository: MetricsRepository | None = None,
         unit_of_work: UnitOfWork | None = None,
         quota_repository: QuotaRepository | None = None,
+        reputation_cache: ReputationCacheRepository | None = None,
+        rules_provider: RulesProvider | None = None,
     ) -> None:
         self.web_risk_client = web_risk_client
         self.virustotal_client = virustotal_client
@@ -67,6 +71,8 @@ class AnalysisService:
         self._metrics_repo = metrics_repository
         self._uow = unit_of_work
         self._quota_repo = quota_repository
+        self._cache = reputation_cache
+        self._rules_provider = rules_provider
 
     async def _consume_quota(self, api: str) -> bool:
         """Consume cuota local de la API; fail-open si Redis no responde (RNF-02)."""
@@ -92,23 +98,81 @@ class AnalysisService:
             )
         )
 
+    async def _cache_lookup(self, url: str, enabled_apis: list[str]) -> list[Reputation] | None:
+        """RF-04.1/04.2: devuelve las reputaciones cacheadas o None (miss).
+
+        Fail-open: si Redis falla o la entrada es inválida/incompleta se trata como miss.
+        La entrada solo es válida si incluye todas las APIs habilitadas actualmente.
+        """
+        if self._cache is None:
+            return None
+        try:
+            entry = await self._cache.get(url)
+        except RedisError as exc:
+            logger.warning(f"Caché de reputación no disponible (fail-open): {type(exc).__name__}")
+            return None
+        if entry is None:
+            return None
+
+        reputations: list[Reputation] = []
+        for api in enabled_apis:
+            item = entry.get(api)
+            if not isinstance(item, dict) or not isinstance(item.get("positivo"), bool):
+                return None
+            detecciones = item.get("detecciones")
+            if detecciones is not None and (
+                isinstance(detecciones, bool) or not isinstance(detecciones, int)
+            ):
+                return None
+            reputations.append(
+                Reputation(
+                    api=api,
+                    estado=SourceStatus.OK,
+                    positivo=item["positivo"],
+                    detecciones=detecciones,
+                    desde_cache=True,
+                )
+            )
+        return reputations
+
+    async def _cache_store(self, url: str, reputations: list[Reputation]) -> None:
+        """RF-04.3: guarda solo si todas las APIs habilitadas respondieron ok (fail-open)."""
+        if self._cache is None:
+            return
+        payload: dict[str, Any] = {
+            r.api: {"positivo": r.positivo, "detecciones": r.detecciones} for r in reputations
+        }
+        payload["fecha_consulta"] = datetime.now(timezone.utc).isoformat()
+        try:
+            await self._cache.set(url, payload)
+        except RedisError as exc:
+            logger.warning(f"No se pudo escribir el caché de reputación: {type(exc).__name__}")
+
     async def _query_external_apis_for_url(
         self,
         url: str,
     ) -> tuple[list[Reputation], bool, dict[str, Any]]:
-        """Ejecuta consultas concurrentes a las 3 APIs de reputación para una URL dada.
+        """Ejecuta consultas concurrentes a las APIs de reputación habilitadas para una URL dada.
 
         Returns:
             Tupla (reputaciones, tiene_fallos, respuestas_crudas): modelos Reputation, un
             booleano que indica si alguna API degradó a timeout/rate_limit/error y las
             respuestas crudas por API (solo las no nulas) para auditoría (D1).
         """
-        api_names = ["google_web_risk", "virustotal", "phishtank"]
+        api_names = ["google_web_risk", "virustotal"]
         check_fns = [
             self.web_risk_client.check_url,
             self.virustotal_client.check_url,
-            self.phishtank_client.check_url,
         ]
+        # PhishTank es opcional: si está deshabilitado no se consulta ni cuenta como fallo.
+        if self.phishtank_client is not None:
+            api_names.append("phishtank")
+            check_fns.append(self.phishtank_client.check_url)
+
+        # RF-04.1/04.2: el caché se consulta antes de consumir cuota o llamar a las APIs.
+        cached = await self._cache_lookup(url, api_names)
+        if cached is not None:
+            return cached, False, {}
 
         # Cuota dual atómica por API (P5): sin cuota -> estado rate_limit sin llamar a la API.
         permits = await asyncio.gather(*(self._consume_quota(n) for n in api_names))
@@ -158,6 +222,10 @@ class AnalysisService:
                 )
                 tiene_fallos = True
 
+        # RF-04.3: solo se cachea con éxito total de las APIs habilitadas.
+        if not tiene_fallos and all(r.estado == SourceStatus.OK for r in reputations):
+            await self._cache_store(url, reputations)
+
         return reputations, tiene_fallos, raw_by_api
 
     async def analyze(
@@ -190,12 +258,17 @@ class AnalysisService:
         analisis_parcial = False
         api_responses: dict[str, dict[str, Any]] = {}
 
+        # Catálogo de reglas y marcas (caché en RAM; respaldo a valores internos si falla)
+        snapshot = await self._rules_provider.get() if self._rules_provider else None
+        brands = snapshot.brands if snapshot else None
+        rules = snapshot.rules if snapshot else None
+
         # 1. Tratamiento del texto y Capa 3 (Heurísticas de Texto)
         if tipo_entrada == "sms":
             mensaje_hash: str | None = generate_message_hmac(contenido)
             from app.engine.text_heuristics import analyze_text
 
-            text_findings: list[Finding] = analyze_text(contenido)
+            text_findings: list[Finding] = analyze_text(contenido, brands=brands, rules=rules)
             puntos_texto = min(20, sum(f.puntos for f in text_findings))
             raw_urls = extract_urls_from_text(contenido)
         else:  # tipo_entrada == "url"
@@ -207,7 +280,7 @@ class AnalysisService:
 
         # 2. Selección de URLs y Capa 2 (Heurísticas Sintácticas)
         selected_url_features: list[UrlFeatures] = (
-            select_top_urls(raw_urls) if raw_urls else []
+            select_top_urls(raw_urls, brands=brands, rules=rules) if raw_urls else []
         )
 
         # Caso especial: SMS sin URLs detectadas

@@ -1,0 +1,553 @@
+{
+  "_nota": "Catálogo semilla de reglas y marcas (CU-11, D11). init_db solo siembra si ambas colecciones están vacías. Los puntos por regla son requisitos (RN-03 a RN-05): el motor los ignora si Mongo trae otros. Las claves que empiezan con guion bajo no se siembran.",
+  "_revision_pendiente": {
+    "descripcion": "Marcas nuevas sembradas con activa=false. Un dominio oficial incorrecto haría pasar un dominio malicioso como legítimo: validar dominios_oficiales y variantes con el equipo de seguridad antes de poner activa=true.",
+    "marcas": [
+      "telcel",
+      "imss",
+      "infonavit",
+      "cfe",
+      "correos_mexico",
+      "liverpool",
+      "bancoppel",
+      "bancoazteca",
+      "scotiabank",
+      "inbursa"
+    ]
+  },
+  "reglas_heuristicas": [
+    {
+      "codigo": "API_GOOGLE_WEB_RISK",
+      "capa": "api",
+      "titulo": "Lista negra Google Web Risk",
+      "descripcion": "Google Web Risk confirma que el dominio es malicioso o de ingeniería social.",
+      "puntos": 50,
+      "tipo_patron": "lista_negra_api",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "API_PHISHTANK",
+      "capa": "api",
+      "titulo": "Lista negra PhishTank",
+      "descripcion": "PhishTank confirma que la URL es un sitio verificado de phishing.",
+      "puntos": 50,
+      "tipo_patron": "lista_negra_api",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "API_VIRUSTOTAL_3_MAS",
+      "capa": "api",
+      "titulo": "Reputación negativa VirusTotal",
+      "descripcion": "Tres o más motores de seguridad reportan la URL como maliciosa.",
+      "puntos": 40,
+      "tipo_patron": "umbral_detecciones",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "API_VIRUSTOTAL_1_2",
+      "capa": "api",
+      "titulo": "Alerta sospechosa VirusTotal",
+      "descripcion": "Uno o dos motores de seguridad reportan la URL como sospechosa.",
+      "puntos": 20,
+      "tipo_patron": "umbral_detecciones",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "URL_IP_DIRECTA",
+      "capa": "url",
+      "titulo": "Uso de IP directa",
+      "descripcion": "La URL utiliza una dirección IP directa en lugar de un nombre de dominio.",
+      "puntos": 20,
+      "tipo_patron": "ip_directa",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "URL_SUBDOMINIO_ENGANOSO",
+      "capa": "url",
+      "titulo": "Subdominio engañoso",
+      "descripcion": "La URL imita el nombre de una marca legítima en el subdominio o estructura.",
+      "puntos": 20,
+      "tipo_patron": "impersonacion_marca",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "URL_TLD_ALTO_RIESGO",
+      "capa": "url",
+      "titulo": "Dominio de alto riesgo",
+      "descripcion": "El dominio usa una terminación frecuente en fraudes.",
+      "puntos": 15,
+      "tipo_patron": "lista_tld",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": [
+          "buzz",
+          "cam",
+          "cf",
+          "click",
+          "club",
+          "country",
+          "fit",
+          "ga",
+          "gq",
+          "icu",
+          "kim",
+          "link",
+          "live",
+          "loan",
+          "ml",
+          "monster",
+          "online",
+          "party",
+          "racing",
+          "rest",
+          "science",
+          "site",
+          "space",
+          "stream",
+          "surf",
+          "tk",
+          "top",
+          "vip",
+          "work",
+          "xyz"
+        ]
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "URL_ACORTADOR",
+      "capa": "url",
+      "titulo": "Uso de acortador de enlaces",
+      "descripcion": "La URL utiliza un servicio acortador que oculta el destino real.",
+      "puntos": 10,
+      "tipo_patron": "lista_dominios",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": [
+          "adf.ly",
+          "bc.vc",
+          "bit.do",
+          "bit.ly",
+          "buff.ly",
+          "clck.ru",
+          "cutt.ly",
+          "goo.gl",
+          "is.gd",
+          "lnkd.in",
+          "mcaf.ee",
+          "ow.ly",
+          "qr.ae",
+          "rb.gy",
+          "rebrand.ly",
+          "rotf.lol",
+          "s.id",
+          "shorturl.at",
+          "snip.ly",
+          "t.co",
+          "tiny.cc",
+          "tinyurl.com",
+          "v.gd"
+        ]
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "URL_EXCESO_GUIONES",
+      "capa": "url",
+      "titulo": "Exceso de guiones en el dominio",
+      "descripcion": "El dominio contiene múltiples guiones encadenados de forma sospechosa.",
+      "puntos": 10,
+      "tipo_patron": "exceso_guiones",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "TXT_LENGUAJE_URGENCIA",
+      "capa": "texto",
+      "titulo": "Lenguaje de urgencia",
+      "descripcion": "El mensaje intenta provocar una acción inmediata o amenaza con suspender la cuenta.",
+      "puntos": 10,
+      "tipo_patron": "patron_texto",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "TXT_SOLICITUD_DATOS",
+      "capa": "texto",
+      "titulo": "Solicitud de credenciales",
+      "descripcion": "El mensaje solicita ingresar contraseñas, PIN, NIP, datos bancarios o validar cargos.",
+      "puntos": 10,
+      "tipo_patron": "patron_texto",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    },
+    {
+      "codigo": "TXT_LEETSPEAK",
+      "capa": "texto",
+      "titulo": "Ofuscación de caracteres",
+      "descripcion": "El mensaje utiliza números o caracteres especiales para ocultar palabras clave o marcas.",
+      "puntos": 5,
+      "tipo_patron": "patron_texto",
+      "parametros": {
+        "marcas_codigos": [],
+        "valores": []
+      },
+      "activa": true,
+      "version": 1
+    }
+  ],
+  "marcas_protegidas": [
+    {
+      "codigo": "bbva",
+      "nombre": "BBVA México",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "bbva.mx",
+        "bbva.com.mx",
+        "bbva.com"
+      ],
+      "variantes_ofuscadas": [
+        "bbv4",
+        "b6va",
+        "bb va",
+        "bbva-seguridad"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "banorte",
+      "nombre": "Banorte",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "banorte.com",
+        "banorte.com.mx"
+      ],
+      "variantes_ofuscadas": [
+        "b4norte",
+        "ban0rte",
+        "banort3",
+        "banorte-linea"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "santander",
+      "nombre": "Santander",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "santander.com.mx",
+        "santander.com"
+      ],
+      "variantes_ofuscadas": [
+        "s4nt4nd3r",
+        "santand3r",
+        "santan-der"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "citibanamex",
+      "nombre": "Citibanamex",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "banamex.com",
+        "citibanamex.com"
+      ],
+      "variantes_ofuscadas": [
+        "c1t1",
+        "b4n4mex",
+        "citiban4mex",
+        "citi-banamex"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "hsbc",
+      "nombre": "HSBC",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "hsbc.com.mx",
+        "hsbc.com"
+      ],
+      "variantes_ofuscadas": [
+        "h5bc",
+        "hs-bc",
+        "hsbc-mexico"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "paypal",
+      "nombre": "PayPal",
+      "categoria": "pagos",
+      "dominios_oficiales": [
+        "paypal.com",
+        "paypal.me"
+      ],
+      "variantes_ofuscadas": [
+        "p4yp4l",
+        "pay-pal",
+        "paypa1",
+        "p4ypal"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "mercadolibre",
+      "nombre": "Mercado Libre / Mercado Pago",
+      "categoria": "comercio",
+      "dominios_oficiales": [
+        "mercadolibre.com.mx",
+        "mercadopago.com.mx",
+        "mercadolibre.com"
+      ],
+      "variantes_ofuscadas": [
+        "merc4dolibre",
+        "m3rc4do",
+        "mercad0pago",
+        "mercado-pago"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "netflix",
+      "nombre": "Netflix",
+      "categoria": "streaming",
+      "dominios_oficiales": [
+        "netflix.com"
+      ],
+      "variantes_ofuscadas": [
+        "n3tfl1x",
+        "net-flix",
+        "netfl1x"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "amazon",
+      "nombre": "Amazon",
+      "categoria": "comercio",
+      "dominios_oficiales": [
+        "amazon.com.mx",
+        "amazon.com"
+      ],
+      "variantes_ofuscadas": [
+        "4m4z0n",
+        "amaz0n",
+        "amz-on"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "coppel",
+      "nombre": "Coppel",
+      "categoria": "retail",
+      "dominios_oficiales": [
+        "coppel.com"
+      ],
+      "variantes_ofuscadas": [
+        "c0ppel",
+        "copp3l",
+        "coppel-credito"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "sat",
+      "nombre": "SAT México",
+      "categoria": "gobierno",
+      "dominios_oficiales": [
+        "sat.gob.mx"
+      ],
+      "variantes_ofuscadas": [
+        "s4t",
+        "sat-gob",
+        "sat-devolucion"
+      ],
+      "activa": true
+    },
+    {
+      "codigo": "telcel",
+      "nombre": "Telcel",
+      "categoria": "telecomunicaciones",
+      "dominios_oficiales": [
+        "telcel.com"
+      ],
+      "variantes_ofuscadas": [
+        "t3lcel",
+        "te1cel",
+        "telc3l"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "imss",
+      "nombre": "IMSS",
+      "categoria": "gobierno",
+      "dominios_oficiales": [
+        "imss.gob.mx"
+      ],
+      "variantes_ofuscadas": [
+        "1mss",
+        "im55"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "infonavit",
+      "nombre": "Infonavit",
+      "categoria": "gobierno",
+      "dominios_oficiales": [
+        "infonavit.org.mx"
+      ],
+      "variantes_ofuscadas": [
+        "1nfonavit",
+        "inf0navit",
+        "infonav1t"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "cfe",
+      "nombre": "CFE",
+      "categoria": "servicios",
+      "dominios_oficiales": [
+        "cfe.mx"
+      ],
+      "variantes_ofuscadas": [
+        "cf3",
+        "c-fe"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "correos_mexico",
+      "nombre": "Correos de México",
+      "categoria": "paqueteria",
+      "dominios_oficiales": [
+        "correosdemexico.gob.mx"
+      ],
+      "variantes_ofuscadas": [
+        "c0rreos",
+        "corre0s",
+        "correosdemex1co"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "liverpool",
+      "nombre": "Liverpool",
+      "categoria": "retail",
+      "dominios_oficiales": [
+        "liverpool.com.mx"
+      ],
+      "variantes_ofuscadas": [
+        "l1verpool",
+        "liverp00l",
+        "liverpo0l"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "bancoppel",
+      "nombre": "BanCoppel",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "bancoppel.com"
+      ],
+      "variantes_ofuscadas": [
+        "b4ncoppel",
+        "bancopp3l",
+        "banc0ppel"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "bancoazteca",
+      "nombre": "Banco Azteca",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "bancoazteca.com.mx"
+      ],
+      "variantes_ofuscadas": [
+        "b4ncoazteca",
+        "bancoazt3ca",
+        "banco-azteca"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "scotiabank",
+      "nombre": "Scotiabank",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "scotiabank.com.mx",
+        "scotiabank.com"
+      ],
+      "variantes_ofuscadas": [
+        "sc0tiabank",
+        "scotiab4nk",
+        "scotia-bank"
+      ],
+      "activa": false
+    },
+    {
+      "codigo": "inbursa",
+      "nombre": "Inbursa",
+      "categoria": "banca",
+      "dominios_oficiales": [
+        "inbursa.com"
+      ],
+      "variantes_ofuscadas": [
+        "1nbursa",
+        "inburs4",
+        "inbur5a"
+      ],
+      "activa": false
+    }
+  ]
+}

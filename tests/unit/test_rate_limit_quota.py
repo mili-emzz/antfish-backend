@@ -179,3 +179,13 @@ async def test_quota_backend_failure_is_fail_open() -> None:
     for c in clients.values():
         c.check_url.assert_awaited_once()
     assert result["analisis_parcial"] is False
+
+
+@pytest.mark.asyncio
+async def test_phishtank_disabled_is_not_queried_nor_counted_as_failure() -> None:
+    web_risk, vt = _client("google_web_risk"), _client("virustotal")
+    service = AnalysisService(web_risk_client=web_risk, virustotal_client=vt, phishtank_client=None)
+    result = await service.analyze("url", "https://example.com/login")
+    apis = {f["api"] for f in result["fuentes_consultadas"]}
+    assert apis == {"google_web_risk", "virustotal"}
+    assert result["analisis_parcial"] is False  # la ausencia de PhishTank no degrada el análisis

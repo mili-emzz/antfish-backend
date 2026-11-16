@@ -28,6 +28,7 @@ from app.engine.public_suffixes import (
     get_registered_domain,
     is_direct_ip,
 )
+from app.engine.rule_catalog import disabled_rule_codes, rule_brand_filter, rule_values
 from app.engine.url_extractor import normalize_url
 
 
@@ -123,13 +124,21 @@ def analyze_url(
     active_brands = brands if brands is not None else DEFAULT_PROTECTED_BRANDS
     registered_domain = get_registered_domain(hostname)
 
+    # Configuración desde el catálogo (Mongo): flag activa y listas. Los puntos NO se leen de aquí.
+    disabled = disabled_rule_codes(rules)
+    brand_filter = rule_brand_filter(rules, "URL_SUBDOMINIO_ENGANOSO")
+    if brand_filter:
+        active_brands = [b for b in active_brands if b.codigo.lower() in brand_filter]
+    risk_tlds = rule_values(rules, "URL_TLD_ALTO_RIESGO") or HIGH_RISK_TLDS
+    shorteners = rule_values(rules, "URL_ACORTADOR") or KNOWN_SHORTENERS
+
     findings: list[Finding] = []
     flags: list[str] = []
     raw_points = 0
 
     # 1. Regla: IP directa (+20 pts)
     es_ip = is_direct_ip(hostname)
-    if es_ip:
+    if es_ip and "URL_IP_DIRECTA" not in disabled:
         flags.append("ip_directa")
         raw_points += 20
         findings.append(
@@ -148,7 +157,9 @@ def analyze_url(
         registered_domain=registered_domain,
         brands=active_brands,
     )
-    if es_enganoso:
+    # La detección de marca se conserva aunque la regla esté inactiva: el cortocircuito por
+    # suplantación de marca es un override fuera de reglas_heuristicas (D-confirmadas).
+    if es_enganoso and "URL_SUBDOMINIO_ENGANOSO" not in disabled:
         flags.append("subdominio_enganoso")
         raw_points += 20
         findings.append(
@@ -162,7 +173,7 @@ def analyze_url(
 
     # 3. Regla: TLD de alto riesgo (+15 pts)
     tld = hostname.rsplit(".", 1)[-1] if "." in hostname and not es_ip else ""
-    es_tld_riesgo = tld in HIGH_RISK_TLDS
+    es_tld_riesgo = tld in risk_tlds and "URL_TLD_ALTO_RIESGO" not in disabled
     if es_tld_riesgo:
         flags.append("tld_alto_riesgo")
         raw_points += 15
@@ -176,7 +187,9 @@ def analyze_url(
         )
 
     # 4. Regla: Acortador de enlaces (+10 pts)
-    es_acortador = (registered_domain in KNOWN_SHORTENERS) or (hostname in KNOWN_SHORTENERS)
+    es_acortador = (
+        (registered_domain in shorteners) or (hostname in shorteners)
+    ) and "URL_ACORTADOR" not in disabled
     if es_acortador:
         flags.append("acortador")
         raw_points += 10
@@ -192,7 +205,7 @@ def analyze_url(
     # 5. Regla: Exceso de guiones en el dominio (+10 pts)
     # Se considera exceso cuando el nombre de host contiene 2 o más guiones
     hyphen_count = hostname.count("-")
-    es_exceso_guiones = hyphen_count >= 2
+    es_exceso_guiones = hyphen_count >= 2 and "URL_EXCESO_GUIONES" not in disabled
     if es_exceso_guiones:
         flags.append("exceso_guiones")
         raw_points += 10

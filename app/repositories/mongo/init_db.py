@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -500,6 +501,9 @@ async def _seed_data_if_needed(
         return
 
     if reglas:
+        # fecha_actualizacion es ISODate en el modelo; el JSON no puede representarla.
+        now = datetime.now(timezone.utc)
+        reglas = [{**r, "fecha_actualizacion": r.get("fecha_actualizacion", now)} for r in reglas]
         await db["reglas_heuristicas"].insert_many(reglas)
     if marcas:
         await db["marcas_protegidas"].insert_many(marcas)
