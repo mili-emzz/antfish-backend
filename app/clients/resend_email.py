@@ -117,3 +117,35 @@ class ResendEmailClient:
             text=text,
         )
 
+    async def send_recovery_code(
+        self,
+        to_email: str,
+        code: str,
+    ) -> dict[str, Any]:
+        """Envía el código de 6 dígitos para restablecer la contraseña (RF-06.6)."""
+        subject = "Recuperación de contraseña - AntFish"
+        html = (
+            "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; "
+            "padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px; background-color: #ffffff;'>"
+            "<h2 style='color: #1e3a8a; margin-top: 0;'>AntFish Security</h2>"
+            "<p style='color: #374151; font-size: 16px;'>"
+            "Tu código para restablecer la contraseña es:</p>"
+            "<div style='text-align: center; margin: 28px 0;'>"
+            f"<span style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1e3a8a; "
+            f"background-color: #eff6ff; padding: 12px 24px; border-radius: 6px; border: 1px solid #bfdbfe; "
+            f"display: inline-block;'>{code}</span>"
+            "</div>"
+            "<p style='color: #6b7280; font-size: 14px; margin-bottom: 0;'>"
+            "Este código tiene una vigencia estricta de 10 minutos y un límite de 5 intentos. "
+            "Si no solicitaste restablecer tu contraseña, ignora este mensaje: tu cuenta sigue segura."
+            "</p>"
+            "</div>"
+        )
+        text = f"Tu código para restablecer la contraseña de AntFish es: {code}. Vigencia: 10 minutos."
+        return await self.send_email(
+            to_email=to_email,
+            subject=subject,
+            html=html,
+            text=text,
+        )
+

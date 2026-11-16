@@ -47,7 +47,7 @@ python -m pytest tests/integration -q
 `ENVIRONMENT`, `MONGODB_URL`, `MONGODB_MIGRATION_URL`, `DATABASE_NAME`, `REDIS_URL`, `HMAC_PEPPER`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `RESEND_API_KEY`, `GOOGLE_WEB_RISK_API_KEY`, `VIRUSTOTAL_API_KEY`, `PHISHTANK_API_KEY`, `PHISHTANK_ENABLED`, `MONGO_ROOT_USER/PASSWORD`, `MONGO_APP_USER/PASSWORD`, `MONGO_MIGRATOR_USER/PASSWORD`, `QUOTA_*`, `RATE_LIMIT_*`, `REPUTATION_CACHE_TTL_SECONDS`, `RULES_CACHE_TTL_SECONDS`, `RULES_RETRY_SECONDS`. Plantilla: `.env.example`. **No leer ni imprimir `.env`** (el clasificador de permisos lo bloquea y es sensible); para editarlo, hacerlo por script sin mostrar valores.
 
 ## Pendiente (orden sugerido)
-1. **Endpoints de auth que faltan:** `resend-code`, `password/forgot`, `password/reset`, `refresh` (juntos: revocación por `password_changed_at`), luego `DELETE /auth/me` (reautenticación, anonimización O12, purga ACID; falta método en `UserRepository`), al final `POST /auth/google` (requiere `google_identity.py` vacío y **agregar `google-auth`: pedir aprobación**). Cada uno con su rate limit y pruebas.
+1. **Endpoints de auth que faltan** (`resend-code`, `forgot`, `reset`, `refresh` ya hechos y probados con fakes): `DELETE /auth/me` (reautenticación, anonimización O12, purga ACID; falta método en `UserRepository`), al final `POST /auth/google` (requiere `google_identity.py` vacío y **agregar `google-auth`: pedir aprobación**). Cada uno con su rate limit y pruebas.
 2. `GET /health` real (comprobar Mongo y Redis; `api/v1/health.py` vacío, hoy `/health` en `main.py` devuelve `ok` fijo).
 3. **RNF-01:** las 2 URLs de un SMS se consultan en serie (~1.0-1.2 s por URL con ambas APIs) → paralelizar con `asyncio.gather`.
 4. Instalar/correr ruff, mypy, import-linter (pedir aprobación).
@@ -55,8 +55,8 @@ python -m pytest tests/integration -q
 6. Endurecimiento restante: migrar Motor→PyMongo async (Motor deprecado; AGENTS.md pide PyMongo async), `google-auth` en deps, logger JSON con escape, `except Exception` residuales (clientes), gitleaks en pre-commit/CI, Dockerfile y CI, Redis con contraseña/TLS, Mongo 3 nodos o Atlas con TLS, credenciales fuera del healthcheck, secretos en gestor, `docker-compose` para producción.
 7. Opcional: `scripts/seed_rules.py` (en `/scripts`, ignorado); limpiar historial git de `context/` y `.pyc` (`git filter-repo`, solo si se pide).
 
-## Documentación por sincronizar (AGENTS.md lo exige; no hecho porque el ADR no está en `docs/`)
-Entradas de ADR + versión/historial en docs derivados para: PhishTank deshabilitado (RF-02.2, RN-02, RN-12/13, RF-04.3 → "todas las APIs habilitadas"); caché RF-04; DP-04 (claves `rl:*`) y 429/503 en el contrato de `register`/`login`/`analysis`; cuotas por defecto; usuarios Mongo; CU-11 cerrado (puntos fijos en código, marcas nuevas inactivas, carga de inactivas). Pedir al usuario la ruta del ADR.
+## Documentación sincronizada (2026-11-16)
+Actualizados en `docs/`: `contexto-AntFish.md` v2.2, `arquitectura_backend_v2.json` v2.3 (DP-04 cerrada), `reglas-negocio.md` v2.2, `casos-de-uso.md` v2.2, `mapeo-requerimientos.md`. Las entradas de ADR están en `docs/ADR-pendientes-de-registrar.md` (#72-#78 **propuestos**; el ADR oficial no está en el repo: pedir ruta al usuario y confirmar numeración). Pendiente de aprobación: `forgot` no responde 429 (contradice la redacción literal de §9.7). Faltan por documentar cuando se implementen: `DELETE /auth/me` y `POST /auth/google` (ADR #78 reservado). `antfish_modelo_nosql.json` no cambió.
 
 ## Estado de git
 Casi todo el trabajo de esta sesión está **sin commitear** (`git status`; el usuario ha ido staging/commiteando por su cuenta). No hacer commit sin que lo pida; citar RF/RN en los mensajes y terminar con la línea `Co-Authored-By` indicada por el entorno.

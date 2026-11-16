@@ -40,6 +40,15 @@ class MetricsRepository:
             session=session,
         )
 
+    async def delete_by_user(
+        self,
+        user_id: str | ObjectId,
+        session: AsyncIOMotorClientSession | None = None,
+    ) -> None:
+        """Elimina el documento de métricas del usuario (O12, RN-26)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        await self._collection.delete_one({"_id": oid}, session=session)
+
     async def find_by_user(self, user_id: str | ObjectId) -> dict[str, Any] | None:
         """Lee el panel de estadísticas del usuario (P7)."""
         oid = ObjectId(user_id) if isinstance(user_id, str) else user_id

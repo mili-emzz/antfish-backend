@@ -2,19 +2,34 @@
 
 from datetime import datetime, timezone
 from typing import Any
+import jwt
 from argon2 import PasswordHasher
+from bson import ObjectId
+from bson.errors import InvalidId
+from pymongo.errors import PyMongoError
 
 from app.core.exceptions import (
     AccountNotVerifiedError,
     DuplicateEmailError,
+    EmailDeliveryError,
+    PersistenceError,
+    ReauthMethodUnavailableError,
+    RateLimitBackendError,
+    RateLimitExceededError,
     UnauthorizedError,
+    VerificationAttemptsExceededError,
 )
+from app.core.logging import logger
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    decode_refresh_token,
     verify_password,
     verify_password_decoy,
 )
+from app.repositories.mongo.analysis_repository import AnalysisRepository
+from app.repositories.mongo.metrics_repository import MetricsRepository
+from app.repositories.mongo.unit_of_work import UnitOfWork
 from app.repositories.mongo.user_repository import UserRepository
 from app.services.verification_service import VerificationService
 
@@ -34,8 +49,14 @@ class AuthService:
         self,
         user_repository: UserRepository,
         verification_service: VerificationService,
+        unit_of_work: UnitOfWork | None = None,
+        analysis_repository: AnalysisRepository | None = None,
+        metrics_repository: MetricsRepository | None = None,
     ) -> None:
         self._user_repo = user_repository
+        self._uow = unit_of_work
+        self._analysis_repo = analysis_repository
+        self._metrics_repo = metrics_repository
         self.verification_service = verification_service
 
     def hash_password(self, password: str) -> str:
@@ -128,13 +149,119 @@ class AuthService:
             raise ValueError("Código inválido o expirado.")
 
         user_id = str(user["_id"])
-        is_valid = await self.verification_service.validate_code(user_id, codigo)
+        try:
+            is_valid = await self.verification_service.validate_code(user_id, codigo)
+        except VerificationAttemptsExceededError:
+            # Uniforme: no distingue intentos agotados de código erróneo (RN-25).
+            raise ValueError("Código inválido o expirado.") from None
 
         if not is_valid:
             raise ValueError("Código inválido o expirado.")
 
         await self._user_repo.mark_as_verified(user_id)
         return {"mensaje": "Cuenta verificada exitosamente. Ya puedes iniciar sesión."}
+
+    async def resend_code(self, email: str) -> None:
+        """Reenvía el código de verificación a una cuenta pendiente (RF-06.3, D17).
+
+        Cuentas inexistentes o no pendientes no hacen nada (la respuesta HTTP es uniforme).
+        El límite de 3/hora por usuario lanza RateLimitExceededError (429).
+        """
+        user = await self._user_repo.find_by_email(email.strip().lower())
+        if not user or user.get("estado_cuenta") != "pendiente_verificacion":
+            return
+        await self.verification_service.generate_and_save_code(
+            str(user["_id"]), email=user["email"]
+        )
+
+    async def request_password_reset(self, email: str) -> None:
+        """Emite código de recuperación si la cuenta existe, está activa y tiene contraseña (RF-06.6).
+
+        Pensado para ejecutarse en segundo plano: la respuesta HTTP es uniforme y de tiempo
+        constante (D16, RN-25). Límite compartido `reenvio:{user_id}`; los fallos se registran
+        sin revelar si el correo existe.
+        """
+        user = await self._user_repo.find_by_email(email.strip().lower())
+        if (
+            not user
+            or user.get("estado_cuenta") != "activa"
+            or not user.get("password_hash")
+        ):
+            return
+        try:
+            await self.verification_service.generate_and_save_code(
+                str(user["_id"]), email=user["email"], purpose="recuperacion"
+            )
+        except RateLimitExceededError:
+            logger.warning("Recuperación de contraseña omitida: límite de reenvíos alcanzado")
+        except RateLimitBackendError:
+            logger.error("Recuperación de contraseña omitida: control de tasa no disponible")
+        except EmailDeliveryError:
+            logger.error("Recuperación de contraseña: fallo al entregar el correo")
+
+    async def reset_password(self, email: str, codigo: str, nueva_password: str) -> dict[str, str]:
+        """Restablece la contraseña con el código de recuperación (RF-06.6, D17, D18).
+
+        Cualquier fallo (correo inexistente, cuenta no activa, código erróneo o intentos
+        agotados) produce el mismo ValueError (RN-25). Al éxito fija password_changed_at,
+        lo que revoca todos los tokens previos.
+        """
+        generic = ValueError("Código inválido o expirado.")
+        user = await self._user_repo.find_by_email(email.strip().lower())
+        if (
+            not user
+            or user.get("estado_cuenta") != "activa"
+            or not user.get("password_hash")
+        ):
+            raise generic
+
+        try:
+            is_valid = await self.verification_service.validate_code(
+                str(user["_id"]), codigo
+            )
+        except VerificationAttemptsExceededError:
+            raise generic from None
+        if not is_valid:
+            raise generic
+
+        updated = await self._user_repo.update_password(
+            user["_id"], self.hash_password(nueva_password)
+        )
+        if not updated:
+            raise generic
+        return {"mensaje": "Contraseña actualizada. Inicia sesión con tu nueva contraseña."}
+
+    async def refresh_access_token(self, refresh_token: str) -> dict[str, str]:
+        """Emite un nuevo Access Token a partir de un Refresh Token válido (RF-06, D18).
+
+        Exige firma/expiración válidas, tipo `refresh`, cuenta `activa` e
+        `iat >= password_changed_at`. No rota el refresh token (stateless).
+        """
+        try:
+            claims = decode_refresh_token(refresh_token)
+        except jwt.PyJWTError:
+            raise UnauthorizedError("Credenciales inválidas") from None
+        if claims.get("type") != "refresh" or not claims.get("sub"):
+            raise UnauthorizedError("Credenciales inválidas")
+
+        try:
+            user = await self._user_repo.find_by_id(claims["sub"])
+        except InvalidId:
+            raise UnauthorizedError("Credenciales inválidas") from None
+        if not user or user.get("estado_cuenta") != "activa":
+            raise UnauthorizedError("Credenciales inválidas")
+
+        changed_at = user.get("password_changed_at")
+        if changed_at is not None:
+            if changed_at.tzinfo is None:
+                changed_at = changed_at.replace(tzinfo=timezone.utc)
+            if int(claims.get("iat", 0)) < int(changed_at.timestamp()):
+                raise UnauthorizedError("Credenciales inválidas")
+
+        access_token = create_access_token(
+            {"sub": str(user["_id"]), "email": user["email"]}
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
 
     async def authenticate_user(
         self,
@@ -186,6 +313,38 @@ class AuthService:
             "refresh_token": refresh_token,
             "token_type": "bearer",
         }
+
+    async def delete_account(self, user: dict[str, Any], password: str) -> None:
+        """Baja de cuenta local con reautenticación, anonimización y purga ACID (RF-06.7, O12, D4).
+
+        - Cuentas sin password_hash (Google) requieren id_token: aún no disponible.
+        - Contraseña incorrecta: UnauthorizedError.
+        - Purga analisis, respuestas_apis y metricas_usuario y anonimiza el usuario en una
+          sola transacción; si algo falla se revierte todo (PersistenceError, 503).
+        """
+        assert self._uow is not None
+        assert self._analysis_repo is not None
+        assert self._metrics_repo is not None
+
+        password_hash = user.get("password_hash")
+        if not password_hash:
+            raise ReauthMethodUnavailableError(
+                "Esta cuenta requiere reautenticación con Google, aún no disponible."
+            )
+        if not verify_password(password, password_hash):
+            raise UnauthorizedError("Contraseña incorrecta")
+
+        oid = user["_id"] if isinstance(user["_id"], ObjectId) else ObjectId(user["_id"])
+        try:
+            async with self._uow.transaction() as session:
+                await self._analysis_repo.delete_all_by_user(oid, session)
+                await self._metrics_repo.delete_by_user(oid, session)
+                if not await self._user_repo.anonymize_user(oid, session):
+                    # La cuenta cambió de estado tras autenticar: se aborta toda la transacción.
+                    raise UnauthorizedError("Cuenta no autorizada")
+        except PyMongoError as exc:
+            logger.error(f"Fallo al eliminar la cuenta: {type(exc).__name__}")
+            raise PersistenceError() from exc
 
     # Alias de conveniencia
     login_user = authenticate_user

@@ -1,11 +1,20 @@
 """Controlador de rutas de autenticación y gestión de cuentas (v1)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from typing import Any
 
-from app.api.deps import rate_limit_auth
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+
+from app.api.deps import get_current_user, rate_limit_auth
 from app.api.schemas.auth import (
+    DeleteAccountRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
+    MessageResponse,
+    RefreshRequest,
+    RefreshResponse,
+    ResendCodeRequest,
+    ResetPasswordRequest,
     UserRegisterRequest,
     UserRegisterResponse,
     VerifyEmailRequest,
@@ -14,11 +23,15 @@ from app.core.exceptions import (
     AccountNotVerifiedError,
     DuplicateEmailError,
     EmailDeliveryError,
+    ReauthMethodUnavailableError,
     UnauthorizedError,
 )
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_RESEND_MESSAGE = "Si la cuenta está pendiente de verificación, se envió un nuevo código."
+_FORGOT_MESSAGE = "Si el correo corresponde a una cuenta activa, recibirás un código de recuperación."
 
 
 def get_auth_service(request: Request) -> AuthService:
@@ -102,6 +115,98 @@ async def verify_email(
 
 
 @router.post(
+    "/resend-code",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("resend-code"))],
+    summary="Reenvía el código de verificación (RF-06.3)",
+    description=(
+        "Máx. 3 envíos/hora por usuario (compartido, D17; 429 al excederse). "
+        "Responde igual exista o no una cuenta pendiente."
+    ),
+)
+async def resend_code(
+    payload: ResendCodeRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> MessageResponse:
+    try:
+        await auth_service.resend_code(payload.email)
+    except EmailDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error al enviar el correo de verificación. Intenta nuevamente más tarde.",
+        ) from exc
+    return MessageResponse(mensaje=_RESEND_MESSAGE)
+
+
+@router.post(
+    "/password/forgot",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("forgot"))],
+    summary="Solicita código de recuperación de contraseña (RF-06.6)",
+    description=(
+        "Responde siempre 200 con mensaje uniforme (D16, RN-25). El código se genera y envía "
+        "en segundo plano solo si la cuenta existe, está activa y tiene contraseña."
+    ),
+)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> MessageResponse:
+    background_tasks.add_task(auth_service.request_password_reset, payload.email)
+    return MessageResponse(mensaje=_FORGOT_MESSAGE)
+
+
+@router.post(
+    "/password/reset",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("reset"))],
+    summary="Restablece la contraseña con código (RF-06.6, D17, D18)",
+)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> MessageResponse:
+    try:
+        result = await auth_service.reset_password(
+            email=payload.email,
+            codigo=payload.codigo,
+            nueva_password=payload.nueva_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    return MessageResponse(**result)
+
+
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Renueva el Access Token (D18)",
+    description=(
+        "Emite un nuevo Access Token si el refresh es válido, la cuenta está activa y "
+        "iat >= password_changed_at."
+    ),
+)
+async def refresh(
+    payload: RefreshRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> RefreshResponse:
+    try:
+        tokens = await auth_service.refresh_access_token(payload.refresh_token)
+    except UnauthorizedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    return RefreshResponse(**tokens)
+
+
+@router.post(
     "/login",
     response_model=LoginResponse,
     status_code=status.HTTP_200_OK,
@@ -134,4 +239,33 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=exc.message if hasattr(exc, "message") else "ACCOUNT_NOT_VERIFIED",
+        ) from exc
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(rate_limit_auth("delete-account"))],
+    summary="Baja de cuenta con reautenticación (RF-06.7, O12)",
+    description=(
+        "Cuentas locales: exige la contraseña en el body. Anonimiza el usuario y purga "
+        "análisis, respuestas de APIs y métricas en una transacción ACID. "
+        "Contraseña incorrecta: 403; cuenta de Google: 501 (pendiente)."
+    ),
+)
+async def delete_me(
+    payload: DeleteAccountRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> None:
+    try:
+        await auth_service.delete_account(user, payload.password)
+    except UnauthorizedError as exc:
+        # 403 y no 401: un 401 haría que la app intente renovar la sesión en vez de pedir la contraseña.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=exc.message
+        ) from exc
+    except ReauthMethodUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=exc.message
         ) from exc

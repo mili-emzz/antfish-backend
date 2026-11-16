@@ -127,6 +127,64 @@ class LoginResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class _EmailOnlyRequest(BaseModel):
+    email: EmailStr = Field(..., description="Correo electrónico del usuario")
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class ResendCodeRequest(_EmailOnlyRequest):
+    """DTO de entrada para reenvío de código de verificación (RF-06.3)."""
+
+
+class ForgotPasswordRequest(_EmailOnlyRequest):
+    """DTO de entrada para solicitar recuperación de contraseña (RF-06.6)."""
+
+
+class ResetPasswordRequest(_EmailOnlyRequest):
+    """DTO de entrada para restablecer la contraseña con código (RF-06.6, D17)."""
+
+    codigo: str = Field(..., min_length=6, max_length=6, description="Código numérico de 6 dígitos")
+    nueva_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Nueva contraseña en texto plano (8 a 128 caracteres)",
+    )
+
+
+class DeleteAccountRequest(BaseModel):
+    """DTO de reautenticación para la baja de cuenta local (RF-06.7)."""
+
+    password: str = Field(..., min_length=1, max_length=128, description="Contraseña actual")
+
+
+class RefreshRequest(BaseModel):
+    """DTO de entrada para renovar el Access Token (RF-06)."""
+
+    refresh_token: str = Field(..., min_length=1, description="JWT Refresh Token vigente")
+
+
+class RefreshResponse(BaseModel):
+    """DTO de salida con el nuevo Access Token."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
+class MessageResponse(BaseModel):
+    """Respuesta uniforme con un mensaje."""
+
+    mensaje: str
+
+
 # Alias de compatibilidad
 RegisterRequest = UserRegisterRequest
 RegisterResponse = UserRegisterResponse

@@ -53,6 +53,9 @@ class Container:
         self.auth_service = AuthService(
             user_repository=self.user_repository,
             verification_service=self.verification_service,
+            unit_of_work=self.unit_of_work,
+            analysis_repository=self.analysis_repository,
+            metrics_repository=self.metrics_repository,
         )
         self.analysis_service = AnalysisService(
             web_risk_client=self.web_risk_client,

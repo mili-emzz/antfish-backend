@@ -84,6 +84,13 @@ class EmailDeliveryError(AntFishError):
         super().__init__(message)
 
 
+class ReauthMethodUnavailableError(AntFishError):
+    """La cuenta requiere un método de reautenticación aún no disponible (HTTP 501)."""
+
+    def __init__(self, message: str = "Método de reautenticación no disponible") -> None:
+        super().__init__(message)
+
+
 class GoogleTokenInvalidError(AntFishError):
     """Token de identidad de Google inválido o no certificado."""
 

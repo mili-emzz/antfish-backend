@@ -29,9 +29,16 @@ class VerificationService:
         secret = settings.HMAC_PEPPER.encode("utf-8")
         return hmac.new(secret, code.encode("utf-8"), hashlib.sha256).hexdigest()
 
-    async def generate_and_save_code(self, user_id: str, email: str | None = None) -> str:
+    async def generate_and_save_code(
+        self,
+        user_id: str,
+        email: str | None = None,
+        purpose: str = "verificacion",
+    ) -> str:
         """Genera un código de 6 dígitos, lo guarda hasheado en Redis y lo envía por correo vía Resend.
 
+        `purpose` es `verificacion` o `recuperacion` (RF-06.2 / RF-06.6). Sobrescribe el código
+        anterior (lo invalida) y reinicia el contador de intentos (RF-06.3).
         Si ocurre una falla de red o error de entrega en Resend, lanza EmailDeliveryError (RNF-06).
         """
         # Máx. 3 envíos/hora por usuario (D17); fail-closed. Sin código no se envía correo.
@@ -41,9 +48,13 @@ class VerificationService:
         plain_code = f"{secrets.randbelow(1_000_000):06d}"
         hashed_code = self.hash_code(plain_code)
         await self.repo.save_code(user_id, hashed_code)
+        await self.repo.clear_attempts(user_id)
 
         if email:
-            await self.email_client.send_verification_code(email, plain_code)
+            if purpose == "recuperacion":
+                await self.email_client.send_recovery_code(email, plain_code)
+            else:
+                await self.email_client.send_verification_code(email, plain_code)
 
         return plain_code
 

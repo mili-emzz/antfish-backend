@@ -104,6 +104,15 @@ class AnalysisRepository:
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
         return await self._analisis.find_one({"_id": oid, "user_id": uid})
 
+    async def delete_all_by_user(
+        self,
+        user_id: ObjectId,
+        session: AsyncIOMotorClientSession | None = None,
+    ) -> None:
+        """Purga todos los análisis y respuestas crudas del usuario (O12, RN-26)."""
+        await self._analisis.delete_many({"user_id": user_id}, session=session)
+        await self._respuestas.delete_many({"user_id": user_id}, session=session)
+
     async def delete_analysis(
         self,
         analysis_id: ObjectId,

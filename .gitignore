@@ -2,6 +2,7 @@
 /docs
 /scripts
 STATE.md
+CLAUDE.md
 
 # Secretos y credenciales
 .env

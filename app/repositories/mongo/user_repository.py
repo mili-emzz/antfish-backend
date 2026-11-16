@@ -57,6 +57,40 @@ class UserRepository:
         """Alias de compatibilidad para find_by_email."""
         return await self.find_by_email(email)
 
+    async def anonymize_user(
+        self,
+        user_id: str | ObjectId,
+        session: Any | None = None,
+    ) -> bool:
+        """Anonimiza una cuenta activa (O12, RN-26, ADR #54). Conserva proveedor_auth y fecha_registro."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "activa"},
+            {"$set": {
+                "email": f"deleted_{oid}@deleted.local",
+                "nombre": None,
+                "password_hash": None,
+                "google_sub": None,
+                "email_verificado": False,
+                "estado_cuenta": "eliminada",
+                "fecha_eliminacion": datetime.now(timezone.utc),
+            }},
+            session=session,
+        )
+        return result.modified_count > 0
+
+    async def update_password(self, user_id: str | ObjectId, password_hash: str) -> bool:
+        """Fija nuevo hash y password_changed_at = ahora en cuenta activa (RF-06.6, D18)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "activa"},
+            {"$set": {
+                "password_hash": password_hash,
+                "password_changed_at": datetime.now(timezone.utc),
+            }},
+        )
+        return result.modified_count > 0
+
     async def mark_as_verified(self, user_id: str) -> bool:
         result = await self._collection.update_one(
             {"_id": ObjectId(user_id)},
