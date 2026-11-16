@@ -1,8 +1,8 @@
 """DTOs y esquemas Pydantic para los flujos de autenticación y cuenta."""
 
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class UserRegisterRequest(BaseModel):
@@ -109,6 +109,14 @@ class LoginRequest(BaseModel):
         return value
 
 
+class UserInfo(BaseModel):
+    """Datos básicos de sesión; `proveedor_auth` indica con qué reautenticar (local/google)."""
+
+    email: str
+    nombre: str | None = None
+    proveedor_auth: str
+
+
 class LoginResponse(BaseModel):
     """DTO de salida con tokens JWT tras login exitoso (RF-06.8)."""
 
@@ -124,6 +132,7 @@ class LoginResponse(BaseModel):
         default="bearer",
         description="Tipo de token para el encabezado Authorization",
     )
+    user: UserInfo = Field(..., description="Datos básicos del usuario autenticado")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -168,9 +177,23 @@ class GoogleLoginRequest(BaseModel):
 
 
 class DeleteAccountRequest(BaseModel):
-    """DTO de reautenticación para la baja de cuenta local (RF-06.7)."""
+    """DTO de reautenticación para la baja de cuenta (RF-06.7, RN-21).
 
-    password: str = Field(..., min_length=1, max_length=128, description="Contraseña actual")
+    Cuentas con contraseña: `password`. Cuentas solo Google: `id_token` del mismo `google_sub`.
+    """
+
+    password: str | None = Field(
+        default=None, min_length=1, max_length=128, description="Contraseña actual"
+    )
+    id_token: str | None = Field(
+        default=None, min_length=1, max_length=4096, description="Google ID Token (cuentas Google)"
+    )
+
+    @model_validator(mode="after")
+    def require_a_credential(self) -> Self:
+        if self.password is None and self.id_token is None:
+            raise ValueError("Se requiere password o id_token")
+        return self
 
 
 class RefreshRequest(BaseModel):

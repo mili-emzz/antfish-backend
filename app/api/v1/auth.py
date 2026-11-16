@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from app.api.deps import get_current_user, rate_limit_auth
+from app.api.errors import api_error
 from app.api.schemas.auth import (
     DeleteAccountRequest,
     ForgotPasswordRequest,
@@ -25,6 +26,7 @@ from app.core.exceptions import (
     AccountNotVerifiedError,
     DuplicateEmailError,
     EmailDeliveryError,
+    GoogleEmailNotVerifiedError,
     GoogleTokenInvalidError,
     IdentityProviderUnavailableError,
     ReauthMethodUnavailableError,
@@ -227,19 +229,23 @@ async def login_google(
     try:
         tokens = await auth_service.login_with_google(payload.id_token)
     except GoogleTokenInvalidError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token de Google inválido",
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_TOKEN",
+            "El token de Google no es válido o ha expirado",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except UnauthorizedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=exc.message,
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "ACCOUNT_NOT_AUTHORIZED",
+            exc.message,
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    except GoogleEmailNotVerifiedError as exc:
+        raise api_error(status.HTTP_409_CONFLICT, "EMAIL_NOT_VERIFIED", exc.message) from exc
     except AccountConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+        raise api_error(status.HTTP_409_CONFLICT, "ACCOUNT_CONFLICT", exc.message) from exc
     except IdentityProviderUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.message
@@ -271,16 +277,14 @@ async def login(
         )
         return LoginResponse(**tokens)
     except UnauthorizedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=exc.message if hasattr(exc, "message") else "Credenciales inválidas",
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_CREDENTIALS",
+            exc.message,
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except AccountNotVerifiedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=exc.message if hasattr(exc, "message") else "ACCOUNT_NOT_VERIFIED",
-        ) from exc
+        raise api_error(status.HTTP_403_FORBIDDEN, "ACCOUNT_NOT_VERIFIED", exc.message) from exc
 
 
 @router.delete(
@@ -289,9 +293,10 @@ async def login(
     dependencies=[Depends(rate_limit_auth("delete-account"))],
     summary="Baja de cuenta con reautenticación (RF-06.7, O12)",
     description=(
-        "Cuentas locales: exige la contraseña en el body. Anonimiza el usuario y purga "
+        "Cuentas con contraseña: exige `password` en el body; cuentas solo Google: `id_token` "
+        "del mismo google_sub. Anonimiza el usuario y purga "
         "análisis, respuestas de APIs y métricas en una transacción ACID. "
-        "Contraseña incorrecta: 403; cuenta de Google: 501 (pendiente)."
+        "Credencial incorrecta: 403."
     ),
 )
 async def delete_me(
@@ -300,10 +305,20 @@ async def delete_me(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> None:
     try:
-        await auth_service.delete_account(user, payload.password)
+        await auth_service.delete_account(user, payload.password, payload.id_token)
+    except GoogleTokenInvalidError as exc:
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            "INVALID_TOKEN",
+            "El token de Google no es válido o ha expirado",
+        ) from exc
     except UnauthorizedError as exc:
         # 403 y no 401: un 401 haría que la app intente renovar la sesión en vez de pedir la contraseña.
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
+        raise api_error(status.HTTP_403_FORBIDDEN, "INVALID_CREDENTIALS", exc.message) from exc
+    except IdentityProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.message
+        ) from exc
     except ReauthMethodUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=exc.message

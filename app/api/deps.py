@@ -11,6 +11,7 @@ from bson.errors import InvalidId
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.api.errors import api_error
 from app.core.security import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
@@ -66,7 +67,7 @@ async def get_current_user(
 
     estado = user.get("estado_cuenta")
     if estado == "pendiente_verificacion":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ACCOUNT_NOT_VERIFIED")
+        raise api_error(status.HTTP_403_FORBIDDEN, "ACCOUNT_NOT_VERIFIED", "ACCOUNT_NOT_VERIFIED")
     if estado != "activa":
         raise _unauthorized()
     return user

@@ -14,6 +14,8 @@ from pymongo.errors import PyMongoError
 
 from app.api.errors import register_exception_handlers
 from app.api.v1 import auth
+from app.clients.google_identity import GoogleIdentity
+from app.core.exceptions import GoogleTokenInvalidError, IdentityProviderUnavailableError
 from app.core.security import create_access_token, hash_password
 from app.services.auth_service import AuthService
 from app.services.rate_limiter import RateLimiter
@@ -70,12 +72,14 @@ class Env:
         self.uow = FakeUow()
         self.analysis = AsyncMock()
         self.metrics = AsyncMock()
+        self.google = AsyncMock()
         service = AuthService(
             self.users,  # type: ignore[arg-type]
             AsyncMock(),
             unit_of_work=self.uow,  # type: ignore[arg-type]
             analysis_repository=self.analysis,
             metrics_repository=self.metrics,
+            google_client=self.google,
         )
 
         class _Repo:
@@ -104,11 +108,17 @@ class Env:
             + create_access_token({"sub": str(self.user["_id"]), "email": "ana@correo.com"})
         }
 
-    async def delete(self, password: str = PASSWORD, headers: dict[str, str] | None = None):
+    async def delete(
+        self,
+        password: str | None = PASSWORD,
+        headers: dict[str, str] | None = None,
+        id_token: str | None = None,
+    ):
+        body = {k: v for k, v in {"password": password, "id_token": id_token}.items() if v}
         return await self.client.request(
             "DELETE",
             "/api/v1/auth/me",
-            json={"password": password},
+            json=body,
             headers=self.headers if headers is None else headers,
         )
 
@@ -149,11 +159,61 @@ async def test_delete_me_requires_valid_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_me_google_account_is_501_until_google_reauth_exists() -> None:
-    e = Env(password_hash=None, proveedor_auth="google")
-    r = await e.delete()
-    assert r.status_code == 501
+async def test_delete_me_google_account_with_matching_id_token_is_deleted() -> None:
+    e = Env(password_hash=None, proveedor_auth="google", google_sub="sub-1")
+    e.google.verify_id_token.return_value = GoogleIdentity("sub-1", "ana@correo.com", True, "Ana")
+    r = await e.delete(password=None, id_token="jwt")
+    assert r.status_code == 204
+    assert e.users.anonymized and e.uow.committed
+
+
+@pytest.mark.asyncio
+async def test_delete_me_google_account_with_other_sub_is_403_and_touches_nothing() -> None:
+    e = Env(password_hash=None, proveedor_auth="google", google_sub="sub-1")
+    e.google.verify_id_token.return_value = GoogleIdentity("sub-2", "x@correo.com", True, None)
+    r = await e.delete(password=None, id_token="jwt")
+    assert r.status_code == 403 and r.json()["code"] == "INVALID_CREDENTIALS"
     assert not e.users.anonymized
+    e.analysis.delete_all_by_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_me_google_account_with_invalid_token_is_403_invalid_token() -> None:
+    e = Env(password_hash=None, proveedor_auth="google", google_sub="sub-1")
+    e.google.verify_id_token.side_effect = GoogleTokenInvalidError()
+    r = await e.delete(password=None, id_token="jwt")
+    assert r.status_code == 403 and r.json()["code"] == "INVALID_TOKEN"
+    assert not e.users.anonymized
+
+
+@pytest.mark.asyncio
+async def test_delete_me_google_account_google_down_is_503() -> None:
+    e = Env(password_hash=None, proveedor_auth="google", google_sub="sub-1")
+    e.google.verify_id_token.side_effect = IdentityProviderUnavailableError()
+    r = await e.delete(password=None, id_token="jwt")
+    assert r.status_code == 503 and not e.users.anonymized
+
+
+@pytest.mark.asyncio
+async def test_delete_me_google_account_with_password_only_is_403() -> None:
+    e = Env(password_hash=None, proveedor_auth="google", google_sub="sub-1")
+    r = await e.delete(password="algo")
+    assert r.status_code == 403 and not e.users.anonymized
+
+
+@pytest.mark.asyncio
+async def test_delete_me_linked_local_account_still_uses_password() -> None:
+    e = Env(google_sub="sub-1")  # local con Google vinculado: conserva password_hash
+    e.google.verify_id_token.return_value = GoogleIdentity("sub-1", "ana@correo.com", True, None)
+    assert (await e.delete(password=None, id_token="jwt")).status_code == 403
+    assert (await e.delete()).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_me_without_any_credential_is_422_validation_error() -> None:
+    e = Env()
+    r = await e.delete(password=None)
+    assert r.status_code == 422 and r.json()["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

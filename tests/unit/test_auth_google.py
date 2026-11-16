@@ -283,6 +283,11 @@ async def test_new_user_is_created_active_verified_without_password() -> None:
     assert user["password_hash"] is None and user["nombre"] == "Ana Pérez"
     assert decode_access_token(body["access_token"])["sub"] == str(user["_id"])
     assert decode_refresh_token(body["refresh_token"])["type"] == "refresh"
+    assert body["user"] == {
+        "email": "ana@correo.com",
+        "nombre": "Ana Pérez",
+        "proveedor_auth": "google",
+    }
 
 
 @pytest.mark.asyncio
@@ -310,13 +315,16 @@ async def test_active_local_account_is_linked_keeping_provider_and_password() ->
     assert (await e.login()).status_code == 200
     assert u["google_sub"] == SUB and u["proveedor_auth"] == "local"
     assert u["password_hash"] == original_hash
+    assert (await e.login()).json()["user"]["proveedor_auth"] == "local"
 
 
 @pytest.mark.asyncio
 async def test_pending_account_is_activated_discarding_password_and_revoking_tokens() -> None:
     u = _local("pendiente_verificacion")
     e = Env(u)
-    assert (await e.login()).status_code == 200
+    r = await e.login()
+    assert r.status_code == 200
+    assert r.json()["user"]["proveedor_auth"] == "google"
     assert u["estado_cuenta"] == "activa" and u["email_verificado"] is True
     assert u["password_hash"] is None and u["proveedor_auth"] == "google"
     assert u["password_changed_at"] is not None
@@ -325,7 +333,9 @@ async def test_pending_account_is_activated_discarding_password_and_revoking_tok
 @pytest.mark.asyncio
 async def test_unverified_google_email_is_409_and_creates_nothing() -> None:
     e = Env(identity=GoogleIdentity(SUB, "ana@correo.com", False, "Ana"))
-    assert (await e.login()).status_code == 409
+    r = await e.login()
+    assert r.status_code == 409
+    assert r.json()["code"] == "EMAIL_NOT_VERIFIED"
     assert not e.repo.users
 
 
@@ -352,6 +362,7 @@ async def test_invalid_google_token_is_401_without_echoing_it() -> None:
     e = Env(identity=GoogleTokenInvalidError())
     r = await e.login("secreto-token-123")
     assert r.status_code == 401
+    assert r.json()["code"] == "INVALID_TOKEN"
     assert "secreto-token-123" not in r.text
 
 

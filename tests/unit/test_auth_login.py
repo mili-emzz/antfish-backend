@@ -7,6 +7,7 @@ import pytest
 from bson import ObjectId
 from fastapi import FastAPI, status
 
+from app.api.errors import register_exception_handlers
 from app.api.v1 import auth
 from app.core.exceptions import AccountNotVerifiedError, UnauthorizedError
 from app.core.security import decode_access_token, decode_refresh_token, hash_password
@@ -34,6 +35,7 @@ def auth_service(mock_user_repo, mock_verification_service):
 @pytest.fixture
 def test_app(auth_service):
     app = FastAPI()
+    register_exception_handlers(app)
     app.include_router(auth.router, prefix="/api/v1")
 
     # Inyectar container simulado con auth_service en app.state
@@ -209,7 +211,7 @@ async def test_endpoint_login_pending_verification_returns_403(test_app, mock_us
         )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert "ACCOUNT_NOT_VERIFIED" in response.json()["detail"]
+    assert response.json() == {"code": "ACCOUNT_NOT_VERIFIED", "detail": "ACCOUNT_NOT_VERIFIED"}
 
 
 @pytest.mark.asyncio

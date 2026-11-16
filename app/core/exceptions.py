@@ -105,6 +105,13 @@ class AccountConflictError(AntFishError):
         super().__init__(message)
 
 
+class GoogleEmailNotVerifiedError(AccountConflictError):
+    """El correo del ID token de Google no está verificado (HTTP 409, EMAIL_NOT_VERIFIED)."""
+
+    def __init__(self, message: str = "El correo de Google no está verificado") -> None:
+        super().__init__(message)
+
+
 class GoogleTokenInvalidError(AntFishError):
     """Token de identidad de Google inválido o no certificado."""
 

@@ -15,6 +15,7 @@ from app.core.exceptions import (
     AccountNotVerifiedError,
     DuplicateEmailError,
     EmailDeliveryError,
+    GoogleEmailNotVerifiedError,
     PersistenceError,
     RateLimitBackendError,
     RateLimitExceededError,
@@ -260,7 +261,7 @@ class AuthService:
         self,
         email: str,
         password: str,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         """Autentica un usuario local y genera tokens Access y Refresh (RF-06.8, D12).
 
         1. Busca el usuario en MongoDB por email normalizado.
@@ -294,16 +295,21 @@ class AuthService:
         return self._issue_tokens(user)
 
     @staticmethod
-    def _issue_tokens(user: dict[str, Any]) -> dict[str, str]:
-        """Emite Access (30 min) y Refresh (30 días) para una cuenta ya validada."""
+    def _issue_tokens(user: dict[str, Any]) -> dict[str, Any]:
+        """Emite Access (30 min) y Refresh (30 días) y los datos básicos de sesión."""
         token_payload = {"sub": str(user["_id"]), "email": user["email"]}
         return {
             "access_token": create_access_token(token_payload),
             "refresh_token": create_refresh_token(token_payload),
             "token_type": "bearer",
+            "user": {
+                "email": user["email"],
+                "nombre": user.get("nombre"),
+                "proveedor_auth": user.get("proveedor_auth", "local"),
+            },
         }
 
-    async def login_with_google(self, id_token: str) -> dict[str, str]:
+    async def login_with_google(self, id_token: str) -> dict[str, Any]:
         """Login/alta/vinculación con Google ID Token (RF-06.4, RF-06.5, RN-18, RN-19, RN-24, D13).
 
         - Token inválido -> GoogleTokenInvalidError (401); Google/config no disponible -> 503.
@@ -319,7 +325,7 @@ class AuthService:
         assert self._google is not None
         identity = await self._google.verify_id_token(id_token)
         if not identity.email_verified:
-            raise AccountConflictError("El correo de Google no está verificado")
+            raise GoogleEmailNotVerifiedError()
 
         for _ in range(2):  # un reintento si otra petición creó la cuenta en paralelo
             user = await self._user_repo.find_by_google_sub(identity.sub)
@@ -341,6 +347,7 @@ class AuthService:
                     user["_id"], identity.sub
                 ):
                     continue
+                user = {**user, "proveedor_auth": "google"}
             elif estado == "activa":
                 current_sub = user.get("google_sub")
                 if current_sub is None:
@@ -377,11 +384,17 @@ class AuthService:
             }
         )
 
-    async def delete_account(self, user: dict[str, Any], password: str) -> None:
+    async def delete_account(
+        self,
+        user: dict[str, Any],
+        password: str | None = None,
+        id_token: str | None = None,
+    ) -> None:
         """Baja de cuenta local con reautenticación, anonimización y purga ACID (RF-06.7, O12, D4).
 
         - Cuentas con password_hash (incluidas locales con Google vinculado) se reautentican con
-          contraseña. Cuentas solo Google (sin password_hash) requerirían id_token: aún no disponible.
+          contraseña. Cuentas solo Google (sin password_hash) con id_token del mismo google_sub
+          (RN-21); token inválido -> GoogleTokenInvalidError, Google caído -> 503.
         - Contraseña incorrecta: UnauthorizedError.
         - Purga analisis, respuestas_apis y metricas_usuario y anonimiza el usuario en una
           sola transacción; si algo falla se revierte todo (PersistenceError, 503).
@@ -391,12 +404,23 @@ class AuthService:
         assert self._metrics_repo is not None
 
         password_hash = user.get("password_hash")
-        if not password_hash:
-            raise ReauthMethodUnavailableError(
-                "Esta cuenta requiere reautenticación con Google, aún no disponible."
-            )
-        if not verify_password(password, password_hash):
-            raise UnauthorizedError("Contraseña incorrecta")
+        if password_hash:
+            if password is None:
+                raise UnauthorizedError("Se requiere la contraseña")
+            if not verify_password(password, password_hash):
+                raise UnauthorizedError("Contraseña incorrecta")
+        else:
+            # Cuenta solo Google: reautenticación con id_token del mismo google_sub (RN-21).
+            google_sub = user.get("google_sub")
+            if self._google is None or not google_sub:
+                raise ReauthMethodUnavailableError(
+                    "No hay un método de reautenticación disponible para esta cuenta."
+                )
+            if id_token is None:
+                raise UnauthorizedError("Se requiere el id_token de Google")
+            identity = await self._google.verify_id_token(id_token)
+            if identity.sub != google_sub:
+                raise UnauthorizedError("El token de Google no corresponde a esta cuenta")
 
         oid = user["_id"] if isinstance(user["_id"], ObjectId) else ObjectId(user["_id"])
         try:
