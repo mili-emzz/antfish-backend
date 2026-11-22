@@ -65,3 +65,40 @@ class BodySizeLimitMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+
+class SecurityHeadersMiddleware:
+    """Añade cabeceras de seguridad a toda respuesta HTTP (sin pisar las ya fijadas).
+
+    - `Cache-Control: no-store`: las respuestas llevan tokens y datos personales.
+    - `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`: endurecimiento básico.
+    - En producción: `Strict-Transport-Security` y una CSP restrictiva (la API no sirve HTML;
+      en desarrollo se omite para no romper Swagger UI en /docs).
+    """
+
+    def __init__(self, app: Any, production: bool = False) -> None:
+        self.app = app
+        headers: dict[bytes, bytes] = {
+            b"cache-control": b"no-store",
+            b"x-content-type-options": b"nosniff",
+            b"x-frame-options": b"DENY",
+            b"referrer-policy": b"no-referrer",
+        }
+        if production:
+            headers[b"strict-transport-security"] = b"max-age=31536000; includeSubDomains"
+            headers[b"content-security-policy"] = b"default-src 'none'; frame-ancestors 'none'"
+        self._headers = headers
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                present = {name.lower() for name, _ in message.get("headers", [])}
+                extra = [(k, v) for k, v in self._headers.items() if k not in present]
+                message = {**message, "headers": [*message.get("headers", []), *extra]}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

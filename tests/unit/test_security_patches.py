@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from bson import ObjectId
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
@@ -186,3 +186,55 @@ async def test_increment_attempts_uses_atomic_script() -> None:
     assert "INCR" in args[0] and "EXPIRE" in args[0]
     redis.incr.assert_not_called()
     redis.expire.assert_not_called()
+
+
+# --- 9. Cabeceras de seguridad ------------------------------------------------------------
+
+
+def _headers_client(production: bool) -> TestClient:
+    from app.api.middleware import SecurityHeadersMiddleware
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.add_middleware(BodySizeLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, production=production)
+
+    @app.get("/ok")
+    async def ok() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.get("/propio")
+    async def propio() -> Response:
+        return Response("x", headers={"Cache-Control": "max-age=60"})
+
+    @app.post("/eco")
+    async def eco(payload: _Payload) -> dict[str, int]:
+        return {"n": len(payload.texto)}
+
+    return TestClient(app)
+
+
+def test_security_headers_on_success_and_error_responses() -> None:
+    client = _headers_client(production=False)
+    for response in (
+        client.get("/ok"),
+        client.get("/no-existe"),  # 404 del manejador global
+        client.post("/eco", content="x" * (MAX_BODY_BYTES + 1)),  # 413 del middleware interno
+    ):
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert "strict-transport-security" not in response.headers
+        assert "content-security-policy" not in response.headers
+
+
+def test_hsts_and_csp_only_in_production() -> None:
+    response = _headers_client(production=True).get("/ok")
+    assert "max-age=" in response.headers["strict-transport-security"]
+    assert "default-src 'none'" in response.headers["content-security-policy"]
+
+
+def test_security_headers_do_not_override_existing_ones() -> None:
+    response = _headers_client(production=False).get("/propio")
+    assert response.headers["cache-control"] == "max-age=60"
