@@ -1,0 +1,93 @@
+# Producción en un solo servidor (EC2/Lightsail): API + Redis + Caddy (HTTPS automático).
+# MongoDB NO va aquí: se usa MongoDB Atlas (MONGODB_URL con mongodb+srv://...).
+#
+# Uso (desde deploy/):
+#   cp env.production.example .env.production   # y rellenar los valores
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# Ver README.md para el procedimiento completo.
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: antfish-api:prod
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      # La contraseña de Redis se compone aquí para no repetirla en dos sitios.
+      REDIS_URL: redis://:${REDIS_PASSWORD:?defina REDIS_PASSWORD}@redis:6379/0
+      ENVIRONMENT: production
+      # uvicorn solo confía en X-Forwarded-For si viene de la subred interna (Caddy).
+      FORWARDED_ALLOW_IPS: 172.30.0.0/24
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Sin puertos publicados: solo Caddy (red interna) llega a la API.
+    expose:
+      - "8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - antfish
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?defina REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    # AOF: las sesiones (refresh tokens), contadores y códigos sobreviven a un reinicio.
+    # noeviction: ante memoria llena falla en vez de borrar sesiones o límites de tasa.
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    # Sin puertos publicados: solo accesible desde la red interna.
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - antfish
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      DOMAIN: ${DOMAIN:?defina DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - antfish
+
+networks:
+  antfish:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  redis_data:
+  caddy_data:
+  caddy_config:

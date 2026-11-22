@@ -1,0 +1,23 @@
+{
+	# Correo para los avisos de Let's Encrypt (certificado y renovación automáticos).
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	# Tope de cuerpo en el borde (la app aplica el mismo límite de 64 KiB como respaldo).
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		-Server
+	}
+
+	# Caddy fija X-Forwarded-For con la IP real del cliente y descarta el que envíe el cliente.
+	reverse_proxy api:8000 {
+		health_uri /health
+		health_interval 30s
+	}
+}

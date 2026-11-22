@@ -74,3 +74,13 @@ jobs:
         run: |
           python -m pip install pip-audit==2.10.1
           pip-audit -r requirements.txt --no-deps --disable-pip
+
+  docker:
+    name: Construcción de la imagen (Dockerfile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: docker build
+        run: docker build -t antfish-api:ci .
