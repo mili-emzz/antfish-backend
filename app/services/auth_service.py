@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import jwt
-from argon2 import PasswordHasher
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo.errors import DuplicateKeyError, PyMongoError
@@ -28,22 +27,15 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
-    verify_password,
-    verify_password_decoy,
+    hash_password_async,
+    verify_password_async,
+    verify_password_decoy_async,
 )
 from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
 from app.repositories.mongo.unit_of_work import UnitOfWork
 from app.repositories.mongo.user_repository import UserRepository
 from app.services.verification_service import VerificationService
-
-# Configuración estándar para Argon2id según RFC 9106
-_hasher = PasswordHasher(
-    time_cost=3,
-    memory_cost=65536,
-    parallelism=4,
-    hash_len=32,
-)
 
 
 class AuthService:
@@ -65,10 +57,6 @@ class AuthService:
         self._google = google_client
         self.verification_service = verification_service
 
-    def hash_password(self, password: str) -> str:
-        """Genera un hash seguro Argon2id para la contraseña."""
-        return _hasher.hash(password)
-
     async def register_user(
         self,
         email: str,
@@ -80,46 +68,29 @@ class AuthService:
         - Normaliza correo a minúsculas y sin espacios (D5).
         - Hashea la contraseña con Argon2id.
         - Asigna estado inicial 'pendiente_verificacion' con email_verificado=False.
-        - Si existe cuenta en 'pendiente_verificacion', sobrescribe datos y reinicia fecha_registro (D14).
+        - Si existe cuenta en 'pendiente_verificacion', NO modifica sus datos (evita el
+          pre-hijacking de la cuenta) y solo reenvía el código (desvía de D14/RN-23).
         - Si existe cuenta activa o suspendida, responde con DuplicateEmailError (HTTP 409).
         - Genera código numérico de 6 dígitos y lo envía vía Resend (RF-06.2).
         """
         normalized_email = email.strip().lower()
         existing_user = await self._user_repo.find_by_email(normalized_email)
 
-        password_hash = self.hash_password(password)
-
         if existing_user:
             estado = existing_user.get("estado_cuenta")
             if estado == "pendiente_verificacion":
-                # Sobrescribe nombre y contraseña, reinicia fecha_registro (D14, RN-23)
-                updated_user = await self._user_repo.update_pending_user(
-                    user_id=existing_user["_id"],
-                    nombre=nombre.strip(),
-                    password_hash=password_hash,
-                )
-                if updated_user is None:
-                    existing_user["nombre"] = nombre.strip()
-                    existing_user["password_hash"] = password_hash
-                    existing_user["fecha_registro"] = datetime.now(UTC)
-
-                    # Generar código en Redis y despachar por correo vía Resend
-                    await self.verification_service.generate_and_save_code(
-                        str(existing_user["_id"]),
-                        email=normalized_email,
-                    )
-                    return existing_user
-
-                # Generar código en Redis y despachar por correo vía Resend
+                # No se sobrescribe contraseña ni nombre: quien registra no ha probado controlar
+                # el correo (pre-hijacking). Solo se reenvía el código al titular del correo.
                 await self.verification_service.generate_and_save_code(
                     str(existing_user["_id"]),
                     email=normalized_email,
                 )
-                return updated_user
+                return existing_user
 
             # Si la cuenta ya está activa, suspendida o eliminada, genera conflicto (409)
             raise DuplicateEmailError("El correo electrónico ya se encuentra registrado")
 
+        password_hash = await hash_password_async(password)
         now = datetime.now(UTC)
         user_doc: dict[str, Any] = {
             "email": normalized_email,
@@ -221,7 +192,7 @@ class AuthService:
             raise generic
 
         updated = await self._user_repo.update_password(
-            user["_id"], self.hash_password(nueva_password)
+            user["_id"], await hash_password_async(nueva_password)
         )
         if not updated:
             raise generic
@@ -277,11 +248,11 @@ class AuthService:
         # Validación uniforme de existencia y presencia de hash local
         if not user or not user.get("password_hash"):
             # Mismo costo de Argon2id que un login real: evita enumerar correos por tiempo.
-            verify_password_decoy(password)
+            await verify_password_decoy_async(password)
             raise UnauthorizedError("Credenciales inválidas")
 
         # Validación de contraseña con Argon2id ANTES de evaluar el estado (D12, ADR #62)
-        if not verify_password(password, user["password_hash"]):
+        if not await verify_password_async(password, user["password_hash"]):
             raise UnauthorizedError("Credenciales inválidas")
 
         # Si las credenciales son válidas, verificar estado_cuenta
@@ -407,7 +378,7 @@ class AuthService:
         if password_hash:
             if password is None:
                 raise UnauthorizedError("Se requiere la contraseña")
-            if not verify_password(password, password_hash):
+            if not await verify_password_async(password, password_hash):
                 raise UnauthorizedError("Contraseña incorrecta")
         else:
             # Cuenta solo Google: reautenticación con id_token del mismo google_sub (RN-21).

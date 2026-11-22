@@ -1,5 +1,17 @@
 from redis.asyncio import Redis
 
+_ATTEMPTS_TTL = 600
+
+# INCR + EXPIRE atómicos: si el proceso cae entre ambas órdenes no queda una clave sin TTL
+# (bloqueo permanente de la verificación). También repara claves sin TTL ya existentes.
+_INCR_ATTEMPTS_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 or redis.call('TTL', KEYS[1]) < 0 then
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return count
+"""
+
 
 class VerificationRepository:
     def __init__(self, redis_client: Redis):
@@ -22,10 +34,10 @@ class VerificationRepository:
 
     async def increment_attempts(self, user_id: str) -> int:
         """Controla el máximo de intentos (fail-closed)."""
-        attempts = await self.redis.incr(f"verif_attempts:{user_id}")
-        if attempts == 1:
-            await self.redis.expire(f"verif_attempts:{user_id}", 600)
-        return attempts
+        attempts = await self.redis.eval(
+            _INCR_ATTEMPTS_SCRIPT, 1, f"verif_attempts:{user_id}", _ATTEMPTS_TTL
+        )
+        return int(attempts)
 
     async def clear_attempts(self, user_id: str) -> None:
         await self.redis.delete(f"verif_attempts:{user_id}")

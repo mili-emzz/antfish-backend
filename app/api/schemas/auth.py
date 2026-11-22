@@ -16,7 +16,8 @@ class UserRegisterRequest(BaseModel):
     password: str = Field(
         ...,
         min_length=8,
-        description="Contraseña en texto plano para el usuario (mínimo 8 caracteres)",
+        max_length=128,
+        description="Contraseña en texto plano para el usuario (8 a 128 caracteres)",
         examples=["PasswordSeguro123!"],
     )
     nombre: str = Field(
@@ -94,6 +95,7 @@ class LoginRequest(BaseModel):
     )
     password: str = Field(
         ...,
+        max_length=128,
         description="Contraseña en texto plano del usuario",
         examples=["PasswordSeguro123!"],
     )

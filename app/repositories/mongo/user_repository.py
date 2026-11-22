@@ -33,27 +33,6 @@ class UserRepository:
         user_data["_id"] = result.inserted_id
         return user_data
 
-    async def update_pending_user(
-        self,
-        user_id: str | ObjectId,
-        nombre: str,
-        password_hash: str,
-    ) -> dict[str, Any] | None:
-        """Sobrescribe datos de un usuario en pendiente_verificacion y reinicia fecha_registro (D14, RN-23)."""
-        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
-        now = datetime.now(UTC)
-        await self._collection.update_one(
-            {"_id": oid, "estado_cuenta": "pendiente_verificacion"},
-            {
-                "$set": {
-                    "nombre": nombre.strip(),
-                    "password_hash": password_hash,
-                    "fecha_registro": now,
-                }
-            },
-        )
-        return await self.find_by_id(oid)
-
     async def get_by_email(self, email: str) -> dict[str, Any] | None:
         """Alias de compatibilidad para find_by_email."""
         return await self.find_by_email(email)

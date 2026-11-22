@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.api.errors import register_exception_handlers
+from app.api.middleware import BodySizeLimitMiddleware
 from app.api.v1 import analysis, auth, health, metrics
 from app.container import Container
 from app.core.config import settings
@@ -47,6 +48,7 @@ app = FastAPI(
     openapi_url=None if _is_prod else "/openapi.json",
 )
 register_exception_handlers(app)
+app.add_middleware(BodySizeLimitMiddleware)
 
 # Vincular el contenedor al "state" de la aplicación
 app.state.container = container

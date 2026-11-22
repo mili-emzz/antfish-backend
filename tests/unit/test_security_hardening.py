@@ -89,8 +89,8 @@ def test_verify_password_handles_invalid_hash_without_broad_except() -> None:
 
 @pytest.mark.asyncio
 async def test_login_unknown_user_spends_argon2_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    called = MagicMock()
-    monkeypatch.setattr("app.services.auth_service.verify_password_decoy", called)
+    called = AsyncMock()
+    monkeypatch.setattr("app.services.auth_service.verify_password_decoy_async", called)
     repo = MagicMock()
     repo.find_by_email = AsyncMock(return_value=None)
     service = AuthService(user_repository=repo, verification_service=MagicMock())

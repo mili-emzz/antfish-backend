@@ -57,18 +57,20 @@ def normalize_url(raw_url: str) -> str:
     if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", clean_url):
         clean_url = f"https://{clean_url}"
 
-    parsed = urlsplit(clean_url)
-
-    # Normalizar hostname (remover userinfo si existía)
-    netloc = parsed.netloc
-    if "@" in netloc:
-        netloc = netloc.split("@", 1)[1]
+    try:
+        parsed = urlsplit(clean_url)
+    except ValueError:
+        # Entrada malformada (p. ej. IPv6 sin cerrar): no es una URL analizable.
+        return ""
 
     # Separar host y puerto para normalizar minúsculas y omitir puertos estándar
-    hostname = parsed.hostname or ""
-    hostname = hostname.lower()
+    hostname = (parsed.hostname or "").lower()
 
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError:
+        # Puerto fuera de rango o no numérico: se descarta y se analiza el host.
+        port = None
     normalized_netloc = f"{hostname}:{port}" if port and port not in (80, 443) else hostname
 
     # Normalizar ruta (conserva el path pero elimina slashes redundantes)

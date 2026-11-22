@@ -1,5 +1,6 @@
 """Módulo de seguridad criptográfica: Argon2id, JWT y HMAC (RF-06.8, RNF-03)."""
 
+import asyncio
 import functools
 import hashlib
 import hmac
@@ -44,6 +45,30 @@ def _decoy_hash() -> str:
 def verify_password_decoy(plain_password: str) -> None:
     """Consume el mismo costo de Argon2id que una verificación real (anti-enumeración por tiempo)."""
     verify_password(plain_password, _decoy_hash())
+
+
+# Argon2id (64 MiB, ~100-300 ms de CPU) no debe correr en el event loop. Se ejecuta en hilos y
+# con concurrencia acotada: memoria máxima ≈ _MAX_CONCURRENT_HASHES × 64 MiB.
+_MAX_CONCURRENT_HASHES = 4
+_hash_slots = asyncio.Semaphore(_MAX_CONCURRENT_HASHES)
+
+
+async def hash_password_async(password: str) -> str:
+    """Versión no bloqueante de `hash_password`."""
+    async with _hash_slots:
+        return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """Versión no bloqueante de `verify_password`."""
+    async with _hash_slots:
+        return await asyncio.to_thread(verify_password, plain_password, hashed_password)
+
+
+async def verify_password_decoy_async(plain_password: str) -> None:
+    """Versión no bloqueante de `verify_password_decoy`."""
+    async with _hash_slots:
+        await asyncio.to_thread(verify_password_decoy, plain_password)
 
 
 def create_access_token(
