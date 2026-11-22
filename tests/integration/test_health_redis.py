@@ -1,6 +1,6 @@
 """Integración con Redis real: sonda de /health (la de Mongo se cubre al correr la API completa).
 
-Usa REDIS_TEST_URL (por defecto redis://localhost:6379/15) y se omite si no hay Redis.
+Usa REDIS_TEST_URL (por defecto redis://localhost:6379/15; con contraseña: redis://:<REDIS_PASSWORD>@localhost:6379/15) y se omite si no hay Redis.
 """
 
 from __future__ import annotations

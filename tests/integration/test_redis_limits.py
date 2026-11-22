@@ -1,6 +1,6 @@
 """Integración con Redis real: atomicidad de rate limit y cuota dual (DP-04, P5).
 
-Usa REDIS_TEST_URL (por defecto redis://localhost:6379/15) y se omite si no hay Redis.
+Usa REDIS_TEST_URL (por defecto redis://localhost:6379/15; con contraseña: redis://:<REDIS_PASSWORD>@localhost:6379/15) y se omite si no hay Redis.
 """
 
 from __future__ import annotations
