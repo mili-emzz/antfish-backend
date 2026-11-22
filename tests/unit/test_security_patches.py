@@ -238,3 +238,47 @@ def test_hsts_and_csp_only_in_production() -> None:
 def test_security_headers_do_not_override_existing_ones() -> None:
     response = _headers_client(production=False).get("/propio")
     assert response.headers["cache-control"] == "max-age=60"
+
+
+# --- 12. Log JSON con escape --------------------------------------------------------------
+
+
+def test_json_log_escapes_quotes_and_newlines() -> None:
+    import json
+    import logging
+
+    from app.core.logging import JsonFormatter
+
+    record = logging.LogRecord(
+        "antfish", logging.WARNING, __file__, 1, 'dato "malo"\n{"level": "CRITICAL"}', None, None
+    )
+    record.api = "virus\ntotal"  # campo extra
+    line = JsonFormatter().format(record)
+
+    assert "\n" not in line  # una sola línea: no se pueden inyectar registros falsos
+    data = json.loads(line)
+    assert data["level"] == "WARNING"
+    assert data["message"] == 'dato "malo"\n{"level": "CRITICAL"}'
+    assert data["api"] == "virus\ntotal"
+
+
+# --- 13. Errores de Resend sin cuerpo de respuesta ----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resend_error_message_does_not_leak_response_body() -> None:
+    import httpx
+
+    from app.clients.resend_email import ResendEmailClient
+    from app.core.exceptions import EmailDeliveryError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, text="destinatario secreto@correo.com inválido")
+
+    client = ResendEmailClient(
+        api_key="k", client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+    with pytest.raises(EmailDeliveryError) as exc:
+        await client.send_email("secreto@correo.com", "asunto", "<p>x</p>")
+    assert "secreto" not in str(exc.value)
+    assert "422" in str(exc.value)

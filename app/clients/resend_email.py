@@ -71,8 +71,9 @@ class ResendEmailClient:
                 logger.error(
                     f"Resend API retornó error HTTP {response.status_code} al enviar correo"
                 )
+                # No se incluye response.text: puede traer datos del destinatario o de la cuenta.
                 raise EmailDeliveryError(
-                    f"Fallo en la entrega de correo por Resend (HTTP {response.status_code}): {response.text}"
+                    f"Fallo en la entrega de correo por Resend (HTTP {response.status_code})"
                 )
 
             data: dict[str, Any] = response.json()
@@ -80,12 +81,16 @@ class ResendEmailClient:
 
         except (httpx.RequestError, httpx.TimeoutException) as exc:
             logger.error(f"Fallo de red al conectar con Resend: {type(exc).__name__}")
-            raise EmailDeliveryError(f"Fallo de red al enviar el correo: {exc}") from exc
+            raise EmailDeliveryError(
+                f"Fallo de red al enviar el correo ({type(exc).__name__})"
+            ) from exc
         except EmailDeliveryError:
             raise
         except Exception as exc:
             logger.error(f"Error inesperado en servicio de correo: {type(exc).__name__}")
-            raise EmailDeliveryError(f"Error inesperado al enviar correo: {exc}") from exc
+            raise EmailDeliveryError(
+                f"Error inesperado al enviar correo ({type(exc).__name__})"
+            ) from exc
 
     async def send_verification_code(
         self,

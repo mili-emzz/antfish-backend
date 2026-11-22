@@ -30,3 +30,6 @@ htmlcov/
 .idea/
 .vscode/
 .claude/
+antfish-db/ 
+resultados-codeql.sarif
+parches-seguridad.md

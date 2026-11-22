@@ -13,7 +13,7 @@ Backend FastAPI (Python 3.14 en el venv) + MongoDB (Motor/PyMongo) + Redis que a
 docker compose up -d                 # completo (mongo, mongo-users, redis); NO basta "up -d mongo redis"
 python -m app.repositories.mongo.init_db   # migraciones+siembra, usa MONGODB_MIGRATION_URL (usuario antfish_migrator)
 python -m pytest tests/unit -q       # 111 pruebas, sin red
-# Integración (Docker): Redis -> REDIS_TEST_URL (def. redis://localhost:6379/15); Mongo -> MONGO_URI con usuario root
+# Integración (Docker): Redis (con requirepass desde 2026-11-22: REDIS_PASSWORD en .env) -> REDIS_TEST_URL (def. redis://localhost:6379/15; con clave: redis://:<clave>@localhost:6379/15); Mongo -> MONGO_URI con usuario root
 python -m pytest tests/integration -q
 ```
 `ruff check . && ruff format --check . && mypy app && lint-imports` **instalados y en verde** (2026-11-16; config en `pyproject.toml`, contratos de capas incluidos; se añadieron `__init__.py` a paquetes que eran namespace). Dependencias fijadas en `requirements.txt` / `requirements-dev.txt` (reemplazan al antiguo `requeriments.txt`).
@@ -50,9 +50,9 @@ python -m pytest tests/integration -q
 1. **Auth:** hechos `register`, `verify-email`, `resend-code`, `login`, `refresh`, `forgot`, `reset`, `DELETE /auth/me` (solo local; Google → 501) y `POST /auth/google` (código listo; `google-auth==2.62.2` ya instalado y fijado (2026-11-16; decodificación verificada con un certificado RSA local); y poner `GOOGLE_CLIENT_ID` en `.env`). **`DELETE /auth/me` (2026-11-16):** con `password_hash` (incluye locales con Google vinculado) se pide `password`; cuentas solo Google piden `id_token` del mismo `google_sub` (403 `INVALID_CREDENTIALS`/`INVALID_TOKEN`, 503 si Google cae). **Contrato de error global:** todo error es `{"code","detail"}` (`app/api/errors.py`, `api_error()` para códigos específicos: `INVALID_TOKEN`, `EMAIL_NOT_VERIFIED`, `ACCOUNT_CONFLICT`, `INVALID_CREDENTIALS`, `ACCOUNT_NOT_VERIFIED`; genéricos por estado HTTP, `RATE_LIMIT_EXCEEDED`, `VALIDATION_ERROR`). `login` y `google` devuelven además `user {email,nombre,proveedor_auth}`. Docs en `docs/` sin sincronizar con esto. Pendiente: probar `/auth/google` con un token real (esperando `GOOGLE_CLIENT_ID` de frontend). `tests/integration/test_delete_account_mongo.py` **pasa** contra Mongo real (4 pruebas, con MONGO_URI root).
 2. ~~`GET /health` real~~ **Hecho** (`services/health_service.py`, `api/v1/health.py`; ADR #79 propuesto).
 3. **RNF-01:** las 2 URLs de un SMS se consultan en serie (~1.0-1.2 s por URL). **Decisión del usuario (2026-11-16): NO paralelizar** mientras el tiempo de respuesta no aumente demasiado; no reabrir sin medir.
-4. ~~Instalar/correr ruff, mypy, import-linter~~ **Hecho**; falta integrarlos en CI/pre-commit.
+4. ~~Instalar/correr ruff, mypy, import-linter~~ **Hecho**; **CI montado (sin commitear aún):** `.github/workflows/ci.yml` (ruff, format, mypy, lint-imports, pytest unit, gitleaks) y `.pre-commit-config.yaml` (ruff+gitleaks; instalar con `pre-commit install`). Falta activarlo en GitHub y, si se quiere, exigirlo para merge a `main`.
 5. **PhishTank:** decidir sustituirlo (URLhaus/OpenPhish), feed local o eliminarlo (cambia RF-02.2/RN-02, requiere ADR).
-6. Endurecimiento restante: migrar Motor→PyMongo async (Motor deprecado; AGENTS.md pide PyMongo async), logger JSON con escape, `except Exception` residuales (clientes), gitleaks en pre-commit/CI, Dockerfile y CI, Redis con contraseña/TLS, Mongo 3 nodos o Atlas con TLS, credenciales fuera del healthcheck, secretos en gestor, `docker-compose` para producción.
+6. Endurecimiento restante: migrar Motor→PyMongo async (Motor deprecado; AGENTS.md pide PyMongo async), logger JSON con escape, `except Exception` residuales (clientes), Dockerfile, Redis con contraseña/TLS, Mongo 3 nodos o Atlas con TLS, credenciales fuera del healthcheck, secretos en gestor, `docker-compose` para producción.
 7. Opcional: `scripts/seed_rules.py` (en `/scripts`, ignorado); limpiar historial git de `context/` y `.pyc` (`git filter-repo`, solo si se pide).
 
 ## Documentación sincronizada (2026-11-16)
