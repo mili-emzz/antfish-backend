@@ -1,5 +1,6 @@
 """Servicio de autenticación y gestión de usuarios (RF-06)."""
 
+import secrets
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,8 +8,10 @@ import jwt
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo.errors import DuplicateKeyError, PyMongoError
+from redis.exceptions import RedisError
 
 from app.clients.google_identity import GoogleIdentityClient
+from app.core.config import settings
 from app.core.exceptions import (
     AccountConflictError,
     AccountNotVerifiedError,
@@ -35,6 +38,8 @@ from app.repositories.mongo.analysis_repository import AnalysisRepository
 from app.repositories.mongo.metrics_repository import MetricsRepository
 from app.repositories.mongo.unit_of_work import UnitOfWork
 from app.repositories.mongo.user_repository import UserRepository
+from app.repositories.redis.session_repository import RefreshSessionRepository
+from app.services.rate_limiter import RateLimiter
 from app.services.verification_service import VerificationService
 
 
@@ -49,7 +54,12 @@ class AuthService:
         analysis_repository: AnalysisRepository | None = None,
         metrics_repository: MetricsRepository | None = None,
         google_client: GoogleIdentityClient | None = None,
+        session_repository: RefreshSessionRepository | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
+        # Sin session_repository no hay rotación: /auth/refresh rechaza todo (solo para pruebas).
+        self._sessions = session_repository
+        self._rate_limiter = rate_limiter
         self._user_repo = user_repository
         self._uow = unit_of_work
         self._analysis_repo = analysis_repository
@@ -199,16 +209,25 @@ class AuthService:
         return {"mensaje": "Contraseña actualizada. Inicia sesión con tu nueva contraseña."}
 
     async def refresh_access_token(self, refresh_token: str) -> dict[str, str]:
-        """Emite un nuevo Access Token a partir de un Refresh Token válido (RF-06, D18).
+        """Renueva la sesión con rotación del Refresh Token (RF-06, D18).
 
-        Exige firma/expiración válidas, tipo `refresh`, cuenta `activa` e
-        `iat >= password_changed_at`. No rota el refresh token (stateless).
+        Exige firma/expiración válidas, tipo `refresh`, `fam`/`jti`, cuenta `activa` e
+        `iat >= password_changed_at`. Cada refresh es de un solo uso: se emite uno nuevo y el
+        anterior deja de valer. Si se presenta un refresh ya usado (posible robo) se revoca
+        toda la familia de la sesión. Redis caído -> 503 (fail-closed).
         """
+        if self._sessions is None:
+            raise UnauthorizedError("Credenciales inválidas")
         try:
             claims = decode_refresh_token(refresh_token)
         except jwt.PyJWTError:
             raise UnauthorizedError("Credenciales inválidas") from None
-        if claims.get("type") != "refresh" or not claims.get("sub"):
+        if (
+            claims.get("type") != "refresh"
+            or not claims.get("sub")
+            or not claims.get("fam")
+            or not claims.get("jti")
+        ):
             raise UnauthorizedError("Credenciales inválidas")
 
         try:
@@ -225,8 +244,53 @@ class AuthService:
             if int(claims.get("iat", 0)) < int(changed_at.timestamp()):
                 raise UnauthorizedError("Credenciales inválidas")
 
-        access_token = create_access_token({"sub": str(user["_id"]), "email": user["email"]})
-        return {"access_token": access_token, "token_type": "bearer"}
+        payload = {"sub": str(user["_id"]), "email": user["email"]}
+        new_jti = secrets.token_urlsafe(16)
+        try:
+            rotated = await self._sessions.rotate(
+                claims["fam"], claims["jti"], new_jti, self._refresh_ttl_seconds()
+            )
+            if not rotated:
+                # jti ya usado o familia revocada: se corta la sesión completa.
+                await self._sessions.revoke(claims["fam"])
+        except RedisError as exc:
+            logger.error(f"Almacén de sesiones no disponible: {type(exc).__name__}")
+            raise RateLimitBackendError() from exc
+        if not rotated:
+            logger.warning("Refresh token reutilizado o revocado: familia de sesión revocada")
+            raise UnauthorizedError("Credenciales inválidas")
+
+        return {
+            "access_token": create_access_token(payload),
+            "refresh_token": create_refresh_token(
+                {**payload, "fam": claims["fam"], "jti": new_jti}
+            ),
+            "token_type": "bearer",
+        }
+
+    async def logout(self, refresh_token: str) -> None:
+        """Revoca la familia de sesión del refresh token (cierre de sesión).
+
+        Idempotente y uniforme: un token inválido, expirado o ya revocado no produce error.
+        """
+        if self._sessions is None:
+            return
+        try:
+            claims = decode_refresh_token(refresh_token)
+        except jwt.PyJWTError:
+            return
+        family = claims.get("fam")
+        if claims.get("type") != "refresh" or not family:
+            return
+        try:
+            await self._sessions.revoke(family)
+        except RedisError as exc:
+            logger.error(f"Almacén de sesiones no disponible: {type(exc).__name__}")
+            raise RateLimitBackendError() from exc
+
+    @staticmethod
+    def _refresh_ttl_seconds() -> int:
+        return settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
 
     async def authenticate_user(
         self,
@@ -243,17 +307,24 @@ class AuthService:
         6. Genera access_token (30 min) y refresh_token (30 días).
         """
         normalized_email = email.strip().lower()
+        # Retroceso progresivo por cuenta (además del límite por IP): 429 mientras dure la espera.
+        if self._rate_limiter is not None:
+            await self._rate_limiter.check_login_account(normalized_email)
         user = await self._user_repo.find_by_email(normalized_email)
 
         # Validación uniforme de existencia y presencia de hash local
         if not user or not user.get("password_hash"):
             # Mismo costo de Argon2id que un login real: evita enumerar correos por tiempo.
             await verify_password_decoy_async(password)
+            await self._record_login_failure(normalized_email)
             raise UnauthorizedError("Credenciales inválidas")
 
         # Validación de contraseña con Argon2id ANTES de evaluar el estado (D12, ADR #62)
         if not await verify_password_async(password, user["password_hash"]):
+            await self._record_login_failure(normalized_email)
             raise UnauthorizedError("Credenciales inválidas")
+        if self._rate_limiter is not None:
+            await self._rate_limiter.clear_login_failures(normalized_email)
 
         # Si las credenciales son válidas, verificar estado_cuenta
         estado = user.get("estado_cuenta")
@@ -263,15 +334,26 @@ class AuthService:
         if estado != "activa":
             raise UnauthorizedError("Cuenta no autorizada")
 
-        return self._issue_tokens(user)
+        return await self._issue_tokens(user)
 
-    @staticmethod
-    def _issue_tokens(user: dict[str, Any]) -> dict[str, Any]:
-        """Emite Access (30 min) y Refresh (30 días) y los datos básicos de sesión."""
+    async def _record_login_failure(self, email: str) -> None:
+        if self._rate_limiter is not None:
+            await self._rate_limiter.record_login_failure(email)
+
+    async def _issue_tokens(self, user: dict[str, Any]) -> dict[str, Any]:
+        """Emite Access (30 min) y Refresh (30 días, nueva familia de sesión) y datos de sesión."""
         token_payload = {"sub": str(user["_id"]), "email": user["email"]}
+        family = secrets.token_urlsafe(16)
+        jti = secrets.token_urlsafe(16)
+        if self._sessions is not None:
+            try:
+                await self._sessions.start(family, jti, self._refresh_ttl_seconds())
+            except RedisError as exc:
+                logger.error(f"Almacén de sesiones no disponible: {type(exc).__name__}")
+                raise RateLimitBackendError() from exc
         return {
             "access_token": create_access_token(token_payload),
-            "refresh_token": create_refresh_token(token_payload),
+            "refresh_token": create_refresh_token({**token_payload, "fam": family, "jti": jti}),
             "token_type": "bearer",
             "user": {
                 "email": user["email"],
@@ -310,7 +392,7 @@ class AuthService:
                     )
                 except DuplicateKeyError:
                     continue
-                return self._issue_tokens(user)
+                return await self._issue_tokens(user)
 
             estado = user.get("estado_cuenta")
             if estado == "pendiente_verificacion":
@@ -330,7 +412,7 @@ class AuthService:
                     )
             else:
                 raise UnauthorizedError("Cuenta no autorizada")
-            return self._issue_tokens(user)
+            return await self._issue_tokens(user)
 
         raise UnauthorizedError("Cuenta no autorizada")
 

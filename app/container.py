@@ -13,6 +13,7 @@ from app.repositories.mongo.user_repository import UserRepository
 from app.repositories.redis.quota_repository import QuotaRepository
 from app.repositories.redis.rate_limit_repository import RateLimitRepository
 from app.repositories.redis.reputation_cache import ReputationCacheRepository
+from app.repositories.redis.session_repository import RefreshSessionRepository
 from app.repositories.redis.verification_repository import VerificationRepository
 from app.services.analysis_service import AnalysisService
 from app.services.auth_service import AuthService
@@ -38,6 +39,7 @@ class Container:
         self.rules_provider = RulesProvider(RulesRepository(db))
         self.unit_of_work = UnitOfWork(db)
         self.verification_repo = VerificationRepository(redis_client)
+        self.session_repository = RefreshSessionRepository(redis_client)
         self.quota_repository = QuotaRepository(redis_client)
         self.reputation_cache = ReputationCacheRepository(redis_client)
         self.rate_limiter = RateLimiter(RateLimitRepository(redis_client))
@@ -65,6 +67,8 @@ class Container:
             analysis_repository=self.analysis_repository,
             metrics_repository=self.metrics_repository,
             google_client=self.google_identity_client,
+            session_repository=self.session_repository,
+            rate_limiter=self.rate_limiter,
         )
         self.analysis_service = AnalysisService(
             web_risk_client=self.web_risk_client,

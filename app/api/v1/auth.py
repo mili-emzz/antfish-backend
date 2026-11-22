@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 
 from app.api.deps import get_current_user, rate_limit_auth
 from app.api.errors import api_error
@@ -12,6 +12,7 @@ from app.api.schemas.auth import (
     GoogleLoginRequest,
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
     MessageResponse,
     RefreshRequest,
     RefreshResponse,
@@ -189,10 +190,11 @@ async def reset_password(
     "/refresh",
     response_model=RefreshResponse,
     status_code=status.HTTP_200_OK,
-    summary="Renueva el Access Token (D18)",
+    summary="Renueva la sesión con rotación del refresh token (D18)",
     description=(
-        "Emite un nuevo Access Token si el refresh es válido, la cuenta está activa y "
-        "iat >= password_changed_at."
+        "Emite un nuevo Access Token y un nuevo Refresh Token si el refresh es válido, vigente "
+        "y no usado, la cuenta está activa e iat >= password_changed_at. El refresh anterior "
+        "queda invalidado; reutilizarlo revoca la sesión completa (401)."
     ),
 )
 async def refresh(
@@ -208,6 +210,24 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     return RefreshResponse(**tokens)
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(rate_limit_auth("logout"))],
+    summary="Cierra la sesión revocando el refresh token",
+    description=(
+        "Revoca toda la familia de la sesión. Idempotente: responde 204 aunque el token sea "
+        "inválido o ya esté revocado."
+    ),
+)
+async def logout(
+    payload: LogoutRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> Response:
+    await auth_service.logout(payload.refresh_token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

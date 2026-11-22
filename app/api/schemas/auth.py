@@ -205,10 +205,20 @@ class RefreshRequest(BaseModel):
 
 
 class RefreshResponse(BaseModel):
-    """DTO de salida con el nuevo Access Token."""
+    """DTO de salida con el nuevo Access Token y el nuevo Refresh Token (rotación).
+
+    El refresh anterior queda invalidado: el cliente debe guardar el nuevo.
+    """
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+
+
+class LogoutRequest(BaseModel):
+    """DTO de entrada para cerrar sesión: el refresh token de la sesión a revocar."""
+
+    refresh_token: str = Field(..., min_length=1, max_length=4096)
 
 
 class MessageResponse(BaseModel):

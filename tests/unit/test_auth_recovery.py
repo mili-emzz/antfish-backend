@@ -73,6 +73,23 @@ class FakeVerificationRepo:
         self.attempts.pop(user_id, None)
 
 
+class FakeSessionRepo:
+    def __init__(self) -> None:
+        self.families: dict[str, str] = {}
+
+    async def start(self, family: str, jti: str, ttl_seconds: int) -> None:
+        self.families[family] = jti
+
+    async def rotate(self, family: str, old_jti: str, new_jti: str, ttl_seconds: int) -> bool:
+        if self.families.get(family) != old_jti:
+            return False
+        self.families[family] = new_jti
+        return True
+
+    async def revoke(self, family: str) -> None:
+        self.families.pop(family, None)
+
+
 class FakeRateRepo:
     def __init__(self) -> None:
         self.counts: dict[str, int] = {}
@@ -107,7 +124,12 @@ class Env:
             email_client=self.email,
             rate_limiter=self.limiter,
         )
-        self.service = AuthService(self.user_repo, self.verification)  # type: ignore[arg-type]
+        self.sessions = FakeSessionRepo()
+        self.service = AuthService(
+            self.user_repo,  # type: ignore[arg-type]
+            self.verification,
+            session_repository=self.sessions,  # type: ignore[arg-type]
+        )
 
         app = FastAPI()
         register_exception_handlers(app)
@@ -236,7 +258,7 @@ async def _request_code(e: Env) -> str:
 @pytest.mark.asyncio
 async def test_reset_success_updates_hash_and_revokes_tokens(env: Env) -> None:
     user = next(iter(env.user_repo.users.values()))
-    old_refresh = create_refresh_token({"sub": str(user["_id"]), "email": user["email"]})
+    old_refresh = (await env.service._issue_tokens(user))["refresh_token"]
     code = await _request_code(env)
 
     r = await env.client.post(
@@ -323,12 +345,13 @@ async def test_verify_email_attempts_exhausted_is_400_not_500() -> None:
 @pytest.mark.asyncio
 async def test_refresh_issues_access_token(env: Env) -> None:
     user = next(iter(env.user_repo.users.values()))
-    refresh = create_refresh_token({"sub": str(user["_id"]), "email": user["email"]})
+    refresh = (await env.service._issue_tokens(user))["refresh_token"]
     r = await env.client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
     assert r.status_code == 200
     claims = decode_access_token(r.json()["access_token"])
     assert claims["sub"] == str(user["_id"]) and claims["type"] == "access"
-    assert "refresh_token" not in r.json()
+    # rotación: se entrega un refresh nuevo, distinto al presentado
+    assert r.json()["refresh_token"] != refresh
 
 
 @pytest.mark.asyncio
@@ -339,17 +362,19 @@ async def test_refresh_rejects_access_token_garbage_and_inactive(env: Env) -> No
         r = await env.client.post("/api/v1/auth/refresh", json={"refresh_token": bad})
         assert r.status_code == 401
 
-    refresh = create_refresh_token(claims)
+    refresh = (await env.service._issue_tokens(user))["refresh_token"]
     for estado in ("pendiente_verificacion", "suspendida", "eliminada"):
         user["estado_cuenta"] = estado
         r = await env.client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
         assert r.status_code == 401
 
-    ghost = create_refresh_token({"sub": str(ObjectId()), "email": "x@x.com"})
+    tracked = {"fam": "f-x", "jti": "j-x"}
+    env.sessions.families["f-x"] = "j-x"
+    ghost = create_refresh_token({"sub": str(ObjectId()), "email": "x@x.com", **tracked})
     assert (
         await env.client.post("/api/v1/auth/refresh", json={"refresh_token": ghost})
     ).status_code == 401
-    bad_id = create_refresh_token({"sub": "no-es-objectid", "email": "x@x.com"})
+    bad_id = create_refresh_token({"sub": "no-es-objectid", "email": "x@x.com", **tracked})
     assert (
         await env.client.post("/api/v1/auth/refresh", json={"refresh_token": bad_id})
     ).status_code == 401

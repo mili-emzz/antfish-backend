@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MIN: int = 5
     RATE_LIMIT_ANALYSIS_PER_MIN: int = 20
     RATE_LIMIT_RESEND_PER_HOUR: int = 3
+    # Retroceso progresivo por cuenta en login: fallos gratis, espera base (se duplica con cada
+    # fallo extra), espera máxima y ventana de olvido de fallos (segundos).
+    LOGIN_FREE_FAILURES: int = 5
+    LOGIN_BACKOFF_BASE_SECONDS: int = 30
+    LOGIN_BACKOFF_MAX_SECONDS: int = 900
+    LOGIN_FAILURE_WINDOW_SECONDS: int = 900
 
     def quota_limits(self) -> dict[str, tuple[int, int]]:
         """Devuelve {api: (limite_por_minuto, limite_diario)}."""
