@@ -1,0 +1,71 @@
+# Configuración de herramientas de calidad (AGENTS.md: ruff, mypy, lint-imports).
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",    # líneas largas en docstrings/comentarios en español: las gestiona el formateador
+    "UP042",   # (str, Enum) se conserva: StrEnum cambiaría str(miembro)
+    "RUF001",  # el proyecto usa texto en español con caracteres no ASCII
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# Patrón estándar de FastAPI: Depends(...) como valor por defecto.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header"]
+
+[tool.mypy]
+python_version = "3.14"
+files = ["app"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["google.*"]
+ignore_missing_imports = true
+
+# --- Regla de capas (AGENTS.md / CONTEXTO §9.3) ---
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "engine es puro (no importa el resto de app)"
+type = "forbidden"
+source_modules = ["app.engine"]
+forbidden_modules = [
+    "app.api",
+    "app.services",
+    "app.clients",
+    "app.repositories",
+    "app.core",
+    "app.container",
+]
+
+[[tool.importlinter.contracts]]
+name = "api no importa repositories, clients ni engine directamente"
+type = "forbidden"
+source_modules = ["app.api"]
+forbidden_modules = ["app.repositories", "app.clients", "app.engine"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "capas inferiores no importan api ni services"
+type = "forbidden"
+source_modules = ["app.clients", "app.repositories", "app.engine"]
+forbidden_modules = ["app.api", "app.services"]
+
+[[tool.importlinter.contracts]]
+name = "services no importa api"
+type = "forbidden"
+source_modules = ["app.services"]
+forbidden_modules = ["app.api"]
+
+[[tool.importlinter.contracts]]
+name = "clients y repositories no se importan entre sí"
+type = "independence"
+modules = ["app.clients", "app.repositories"]

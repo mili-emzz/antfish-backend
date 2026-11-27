@@ -1,2 +1,35 @@
-/scripts
+# Documentación y scripts internos (fuera del repositorio)
 /docs
+/scripts
+STATE.md
+CLAUDE.md
+
+# Secretos y credenciales
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+keyfile
+
+# Entornos virtuales y caches de Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs, editores y herramientas locales
+*.log
+.idea/
+.vscode/
+.claude/
+antfish-db/ 
+resultados-codeql.sarif
+parches-seguridad.md

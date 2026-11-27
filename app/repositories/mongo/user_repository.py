@@ -1,0 +1,122 @@
+"""Repositorio MongoDB con Motor para la colección usuarios."""
+
+from datetime import UTC, datetime
+from typing import Any
+
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+
+class UserRepository:
+    """Repositorio asíncrono para gestionar operaciones de persistencia en la colección usuarios."""
+
+    def __init__(self, db: AsyncIOMotorDatabase) -> None:
+        self._db = db
+        self._collection = db["usuarios"]
+
+    async def find_by_email(self, email: str) -> dict[str, Any] | None:
+        """Busca un usuario por su correo electrónico normalizado (P1, I1)."""
+        normalized_email = email.strip().lower()
+        return await self._collection.find_one({"email": normalized_email})
+
+    async def find_by_id(self, user_id: str | ObjectId) -> dict[str, Any] | None:
+        """Busca un usuario por su ObjectId (P2)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        return await self._collection.find_one({"_id": oid})
+
+    async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
+        """Inserta un nuevo documento en la colección usuarios (O1)."""
+        if "email" in user_data and isinstance(user_data["email"], str):
+            user_data["email"] = user_data["email"].strip().lower()
+
+        result = await self._collection.insert_one(user_data)
+        user_data["_id"] = result.inserted_id
+        return user_data
+
+    async def get_by_email(self, email: str) -> dict[str, Any] | None:
+        """Alias de compatibilidad para find_by_email."""
+        return await self.find_by_email(email)
+
+    async def find_by_google_sub(self, google_sub: str) -> dict[str, Any] | None:
+        """Busca un usuario por su identificador estable de Google (índice parcial único)."""
+        return await self._collection.find_one({"google_sub": google_sub})
+
+    async def link_google_sub(self, user_id: str | ObjectId, google_sub: str) -> bool:
+        """Vincula Google a una cuenta activa sin google_sub; conserva proveedor y password (RN-18)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "activa", "google_sub": None},
+            {"$set": {"google_sub": google_sub}},
+        )
+        return result.modified_count > 0
+
+    async def activate_pending_with_google(self, user_id: str | ObjectId, google_sub: str) -> bool:
+        """Activa una cuenta pendiente con Google: descarta password_hash (RN-24, D13)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        now = datetime.now(UTC)
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "pendiente_verificacion"},
+            {
+                "$set": {
+                    "proveedor_auth": "google",
+                    "google_sub": google_sub,
+                    "password_hash": None,
+                    "estado_cuenta": "activa",
+                    "email_verificado": True,
+                    "fecha_verificacion": now,
+                    "password_changed_at": now,
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def anonymize_user(
+        self,
+        user_id: str | ObjectId,
+        session: Any | None = None,
+    ) -> bool:
+        """Anonimiza una cuenta activa (O12, RN-26, ADR #54). Conserva proveedor_auth y fecha_registro."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "activa"},
+            {
+                "$set": {
+                    "email": f"deleted_{oid}@deleted.local",
+                    "nombre": None,
+                    "password_hash": None,
+                    "google_sub": None,
+                    "email_verificado": False,
+                    "estado_cuenta": "eliminada",
+                    "fecha_eliminacion": datetime.now(UTC),
+                }
+            },
+            session=session,
+        )
+        return result.modified_count > 0
+
+    async def update_password(self, user_id: str | ObjectId, password_hash: str) -> bool:
+        """Fija nuevo hash y password_changed_at = ahora en cuenta activa (RF-06.6, D18)."""
+        oid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = await self._collection.update_one(
+            {"_id": oid, "estado_cuenta": "activa"},
+            {
+                "$set": {
+                    "password_hash": password_hash,
+                    "password_changed_at": datetime.now(UTC),
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def mark_as_verified(self, user_id: str) -> bool:
+        result = await self._collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$set": {
+                    "estado_cuenta": "activa",
+                    "email_verificado": True,
+                    "fecha_verificacion": datetime.now(UTC),
+                }
+            },
+        )
+        return result.modified_count > 0

@@ -1,0 +1,23 @@
+# Fuera de la imagen: secretos, entornos locales, pruebas y documentación interna.
+.env
+.env.*
+**/.env
+**/.env.*
+deploy/
+venv/
+.venv/
+.git/
+.github/
+docs/
+tests/
+antfish-db/
+docker/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.md
+*.sarif
+*.pem
+*.key
