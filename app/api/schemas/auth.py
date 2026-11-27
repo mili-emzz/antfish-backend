@@ -191,6 +191,9 @@ class DeleteAccountRequest(BaseModel):
         default=None, min_length=1, max_length=4096, description="Google ID Token (cuentas Google)"
     )
 
+    # Mismo recorte que en registro y login: si no, la contraseña correcta podría no coincidir.
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     @model_validator(mode="after")
     def require_a_credential(self) -> Self:
         if self.password is None and self.id_token is None:

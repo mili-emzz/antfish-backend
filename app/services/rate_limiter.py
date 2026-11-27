@@ -2,9 +2,9 @@
 
 Políticas de resiliencia (AGENTS.md):
 - Autenticación y envío de códigos: fail-closed (Redis caído -> 503).
-- Análisis: fail-open (Redis caído -> se permite y se registra una advertencia).
+- Análisis y consultas (historial, detalle, borrado, métricas): fail-open (Redis caído -> se permite y se registra una advertencia).
 
-Claves (ventana fija): rl:auth:{endpoint}:{ip}, rl:analysis:{user_id}, reenvio:{user_id}.
+Claves (ventana fija): rl:auth:{endpoint}:{ip}, rl:analysis:{user_id}, rl:read:{user_id}, reenvio:{user_id}.
 """
 
 from __future__ import annotations
@@ -32,11 +32,13 @@ class RateLimiter:
         if count > limit:
             raise RateLimitExceededError(retry_after=ttl)
 
-    async def check_auth(self, endpoint: str, ip: str) -> None:
+    async def check_auth(self, endpoint: str, ip: str, limit: int | None = None) -> None:
         """Máx. N intentos por minuto por IP en endpoints de autenticación (fail-closed)."""
         try:
             await self._enforce(
-                f"rl:auth:{endpoint}:{ip}", settings.RATE_LIMIT_AUTH_PER_MIN, WINDOW_MINUTE
+                f"rl:auth:{endpoint}:{ip}",
+                limit if limit is not None else settings.RATE_LIMIT_AUTH_PER_MIN,
+                WINDOW_MINUTE,
             )
         except RedisError as exc:
             logger.error(f"Rate limit de autenticación no disponible: {type(exc).__name__}")
@@ -97,4 +99,15 @@ class RateLimiter:
         except RedisError as exc:
             logger.warning(
                 f"Rate limit de análisis no disponible (fail-open): {type(exc).__name__}"
+            )
+
+    async def check_read(self, user_id: str) -> None:
+        """Máx. N consultas por minuto por usuario, contador compartido (fail-open)."""
+        try:
+            await self._enforce(
+                f"rl:read:{user_id}", settings.RATE_LIMIT_READ_PER_MIN, WINDOW_MINUTE
+            )
+        except RedisError as exc:
+            logger.warning(
+                f"Rate limit de consultas no disponible (fail-open): {type(exc).__name__}"
             )

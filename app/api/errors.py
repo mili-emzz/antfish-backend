@@ -70,7 +70,12 @@ async def _http_exception_handler(_: Request, exc: StarletteHTTPException) -> JS
 async def _validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        content=_body("VALIDATION_ERROR", jsonable_encoder(exc.errors())),
+        # Solo tipo, ubicación y mensaje: `input`/`ctx` devolverían contraseñas o el texto del
+        # SMS, y un cuerpo binario o con surrogates rompía la serialización (500).
+        content=_body(
+            "VALIDATION_ERROR",
+            jsonable_encoder([{k: e[k] for k in ("type", "loc", "msg")} for e in exc.errors()]),
+        ),
     )
 
 

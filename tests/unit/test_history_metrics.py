@@ -170,7 +170,9 @@ def _app(analysis_service: Any, metrics_service: Any) -> TestClient:
     app.include_router(analysis_api.router, prefix="/api/v1")
     app.include_router(metrics_api.router, prefix="/api/v1")
     app.state.container = MagicMock(
-        analysis_service=analysis_service, metrics_service=metrics_service
+        analysis_service=analysis_service,
+        metrics_service=metrics_service,
+        rate_limiter=AsyncMock(),
     )
     app.dependency_overrides[get_current_user] = lambda: {"_id": USER_ID}
     return TestClient(app)

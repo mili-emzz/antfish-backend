@@ -22,6 +22,7 @@ from app.api.schemas.auth import (
     UserRegisterResponse,
     VerifyEmailRequest,
 )
+from app.core.config import settings
 from app.core.exceptions import (
     AccountConflictError,
     AccountNotVerifiedError,
@@ -104,6 +105,7 @@ async def register(
 @router.post(
     "/verify-email",
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("verify-email"))],
     summary="Verifica el correo del usuario (RF-06.2)",
 )
 async def verify_email(
@@ -190,6 +192,7 @@ async def reset_password(
     "/refresh",
     response_model=RefreshResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_auth("refresh", settings.RATE_LIMIT_REFRESH_PER_MIN))],
     summary="Renueva la sesión con rotación del refresh token (D18)",
     description=(
         "Emite un nuevo Access Token y un nuevo Refresh Token si el refresh es válido, vigente "

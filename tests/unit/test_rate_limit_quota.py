@@ -8,10 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from redis.exceptions import ConnectionError as RedisConnectionError
 
+from app.api.deps import rate_limit_read
 from app.api.errors import register_exception_handlers
-from app.api.v1 import auth
+from app.api.v1 import analysis, auth, metrics
 from app.clients.base import ReputationResult
 from app.core.exceptions import RateLimitBackendError, RateLimitExceededError
 from app.engine.models import Reputation, SourceStatus
@@ -189,3 +191,59 @@ async def test_phishtank_disabled_is_not_queried_nor_counted_as_failure() -> Non
     apis = {f["api"] for f in result["fuentes_consultadas"]}
     assert apis == {"google_web_risk", "virustotal"}
     assert result["analisis_parcial"] is False  # la ausencia de PhishTank no degrada el análisis
+
+
+@pytest.mark.asyncio
+async def test_check_auth_accepts_custom_limit() -> None:
+    limiter = RateLimiter(FakeRepo())  # type: ignore[arg-type]
+    for _ in range(20):
+        await limiter.check_auth("refresh", "1.2.3.4", 20)
+    with pytest.raises(RateLimitExceededError):
+        await limiter.check_auth("refresh", "1.2.3.4", 20)
+
+
+@pytest.mark.asyncio
+async def test_read_limit_is_per_user_and_fail_open() -> None:
+    limiter = RateLimiter(FakeRepo())  # type: ignore[arg-type]
+    for _ in range(60):
+        await limiter.check_read("u1")
+    with pytest.raises(RateLimitExceededError):
+        await limiter.check_read("u1")
+    await limiter.check_read("u2")
+    await RateLimiter(BrokenRepo()).check_read("u1")  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/api/v1/auth/verify-email", {"email": "a@b.com", "codigo": "123456"}),
+        ("/api/v1/auth/refresh", {"refresh_token": "x"}),
+    ],
+)
+async def test_verify_and_refresh_return_429(path: str, body: dict[str, str]) -> None:
+    limiter = AsyncMock()
+    limiter.check_auth.side_effect = RateLimitExceededError(retry_after=7)
+    transport = httpx.ASGITransport(app=_auth_app(limiter))
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        r = await client.post(path, json=body)
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "7"
+
+
+def test_every_authenticated_query_route_is_rate_limited() -> None:
+    expected = {
+        ("GET", "/analysis"),
+        ("GET", "/analysis/{analysis_id}"),
+        ("DELETE", "/analysis/{analysis_id}"),
+        ("GET", "/metrics/me"),
+    }
+    found = {
+        (method, route.path)
+        for router in (analysis.router, metrics.router)
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and any(d.call is rate_limit_read for d in route.dependant.dependencies)
+        for method in route.methods
+    }
+    assert found == expected

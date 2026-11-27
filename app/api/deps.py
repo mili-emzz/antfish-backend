@@ -84,14 +84,16 @@ def _get_rate_limiter(request: Request) -> Any:
     return limiter
 
 
-def rate_limit_auth(endpoint: str) -> Callable[[Request], Awaitable[None]]:
-    """Dependencia: máx. 5 intentos por minuto por IP en el endpoint de auth (fail-closed)."""
+def rate_limit_auth(
+    endpoint: str, limit: int | None = None
+) -> Callable[[Request], Awaitable[None]]:
+    """Dependencia: límite por minuto por IP en el endpoint de auth (fail-closed; def. 5)."""
 
     async def _dependency(request: Request) -> None:
         # request.client.host ya refleja X-Forwarded-For solo si uvicorn confía en el proxy
         # (--proxy-headers/--forwarded-allow-ips); no se leen cabeceras manualmente (anti-spoofing).
         ip = request.client.host if request.client else "desconocida"
-        await _get_rate_limiter(request).check_auth(endpoint, ip)
+        await _get_rate_limiter(request).check_auth(endpoint, ip, limit)
 
     return _dependency
 
@@ -102,4 +104,13 @@ async def rate_limit_analysis(
 ) -> dict[str, Any]:
     """Dependencia: máx. 20 análisis por minuto por usuario (fail-open ante fallo de Redis)."""
     await _get_rate_limiter(request).check_analysis(str(user["_id"]))
+    return user
+
+
+async def rate_limit_read(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Dependencia: máx. 60 consultas por minuto por usuario (fail-open ante fallo de Redis)."""
+    await _get_rate_limiter(request).check_read(str(user["_id"]))
     return user

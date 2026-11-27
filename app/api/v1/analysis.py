@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from app.api.deps import get_current_user, rate_limit_analysis
+from app.api.deps import rate_limit_analysis, rate_limit_read
 from app.api.schemas.analysis import (
     AnalysisRequest,
     AnalysisResponse,
@@ -65,7 +65,7 @@ async def analyze_content(
 )
 async def list_history(
     cursor: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(rate_limit_read),
     analysis_service: AnalysisService = Depends(get_analysis_service),
 ) -> HistoryPageResponse:
     """Devuelve una página del historial del usuario autenticado."""
@@ -85,7 +85,7 @@ async def list_history(
 )
 async def get_analysis(
     analysis_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(rate_limit_read),
     analysis_service: AnalysisService = Depends(get_analysis_service),
 ) -> AnalysisResponse:
     """Detalle de un análisis propio; 404 si no existe o es de otro usuario."""
@@ -104,7 +104,7 @@ async def get_analysis(
 )
 async def delete_analysis(
     analysis_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(rate_limit_read),
     analysis_service: AnalysisService = Depends(get_analysis_service),
 ) -> Response:
     """Borra un análisis propio en transacción ACID."""
