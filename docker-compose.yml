@@ -22,7 +22,7 @@ services:
         chmod 400 /keys/keyfile
 
   mongo:
-    image: mongo:7.0
+    image: mongo:9.0
     restart: unless-stopped
     depends_on:
       mongo-keyfile:
@@ -50,7 +50,7 @@ services:
   # Crea/sincroniza los usuarios de mínimo privilegio (idempotente; funciona también
   # sobre un volumen ya inicializado). Se ejecuta tras cada `docker compose up`.
   mongo-users:
-    image: mongo:7.0
+    image: mongo:9.0
     restart: "no"
     depends_on:
       mongo:
