@@ -5,9 +5,11 @@ from __future__ import annotations
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from app.api.errors import api_error, register_exception_handlers
+from app.api.schemas.auth import DeleteAccountRequest, LoginRequest, UserRegisterRequest
 from app.core.exceptions import PersistenceError, RateLimitExceededError
 
 
@@ -82,3 +84,38 @@ async def test_validation_error_is_422_with_code_and_list_detail() -> None:
     r = await _client().post("/validate", json={"n": "abc"})
     assert r.status_code == 422 and r.json()["code"] == "VALIDATION_ERROR"
     assert isinstance(r.json()["detail"], list)
+
+
+@pytest.mark.parametrize(
+    ("content", "content_type"),
+    [
+        (b'{"email":"a@correo.com","password":"Secr3t!","nombre":"x"}', "application/json"),
+        (b"\xff\xfe\x00", "text/plain"),
+        (b'{"email":"a@correo.com","password":"\\ud800aaaaaaaa","nombre":"x"}', "application/json"),
+        (
+            b'{"email":"\\ud800@correo.com","password":"aaaaaaaaaa","nombre":"x"}',
+            "application/json",
+        ),
+    ],
+)
+def test_validation_errors_never_echo_input_nor_crash(content: bytes, content_type: str) -> None:
+    app = FastAPI()
+    register_exception_handlers(app)
+
+    @app.post("/r")
+    def register(payload: UserRegisterRequest) -> None:
+        return None
+
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post("/r", content=content, headers={"content-type": content_type})
+    assert r.status_code == 422
+    assert "Secr3t!" not in r.text
+    assert all(set(item) == {"type", "loc", "msg"} for item in r.json()["detail"])
+
+
+def test_password_is_trimmed_the_same_in_register_login_and_delete() -> None:
+    raw = "  clave1234  "
+    register = UserRegisterRequest(email="a@correo.com", password=raw, nombre="n")
+    login = LoginRequest(email="a@correo.com", password=raw)
+    delete = DeleteAccountRequest(password=raw)
+    assert register.password == login.password == delete.password == "clave1234"

@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     # Rate limiting de endpoints (DP-04): ventana fija de 60 s.
     RATE_LIMIT_AUTH_PER_MIN: int = 5
     RATE_LIMIT_ANALYSIS_PER_MIN: int = 20
+    RATE_LIMIT_REFRESH_PER_MIN: int = 20
+    RATE_LIMIT_READ_PER_MIN: int = 60
     RATE_LIMIT_RESEND_PER_HOUR: int = 3
     # Retroceso progresivo por cuenta en login: fallos gratis, espera base (se duplica con cada
     # fallo extra), espera máxima y ventana de olvido de fallos (segundos).

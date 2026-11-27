@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.deps import get_current_user
+from app.api.deps import rate_limit_read
 from app.api.schemas.metrics import MetricsResponse
 from app.services.metrics_service import MetricsService
 
@@ -28,7 +28,7 @@ def get_metrics_service(request: Request) -> MetricsService:
     summary="Estadísticas del usuario autenticado",
 )
 async def get_my_metrics(
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(rate_limit_read),
     metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> MetricsResponse:
     """Total de escaneos, desglose SMS/URL y amenazas bloqueadas (RF-05.2)."""

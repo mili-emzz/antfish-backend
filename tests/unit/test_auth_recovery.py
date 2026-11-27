@@ -333,6 +333,7 @@ async def test_verify_email_attempts_exhausted_is_400_not_500() -> None:
     e = Env(_user("pendiente_verificacion"))
     await e.client.post("/api/v1/auth/resend-code", json={"email": "ana@correo.com"})
     for _ in range(6):
+        e.rate_repo.counts.clear()  # ventanas distintas: aquí se prueba el tope por código
         r = await e.client.post(
             "/api/v1/auth/verify-email", json={"email": "ana@correo.com", "codigo": "000000"}
         )
